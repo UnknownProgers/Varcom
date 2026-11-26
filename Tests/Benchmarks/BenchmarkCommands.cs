@@ -4,7 +4,6 @@ namespace Varcom.Benchmarks;
 
 [Cmd("small")]
 public readonly record struct SmallCommand(int Value) : ICommand;
-
 [CmdHandler(typeof(SmallCommand))]
 public sealed class SmallHandler : ICommandHandler<SmallCommand>
 {
@@ -16,10 +15,8 @@ public sealed class SmallHandler : ICommandHandler<SmallCommand>
 		return CommandResult.Ok();
 	}
 }
-
 [Cmd("large")]
 public readonly record struct LargeCommand(int A, int B, int C, int D, int E, int F, int G, int H, CmdString Label) : ICommand;
-
 [CmdHandler(typeof(LargeCommand))]
 public sealed class LargeHandler : ICommandHandler<LargeCommand>
 {
@@ -31,7 +28,6 @@ public sealed class LargeHandler : ICommandHandler<LargeCommand>
 		return CommandResult.Ok();
 	}
 }
-
 public sealed class BenchmarkOwner
 {
 	[Var("number")] public int Number { get; set; } = 12345;
@@ -51,4 +47,8 @@ public sealed class BenchmarkOwner
 	[Cmd("many")]
 	public void Many(int a = 1, int b = 2, int c = 3, int d = 4, int e = 5, int f = 6, int g = 7, int h = 8) =>
 		Calls += a + b + c + d + e + f + g + h;
+}
+[CmdModule]
+public sealed partial class BenchmarkCommandsModule
+{
 }

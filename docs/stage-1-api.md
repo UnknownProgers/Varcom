@@ -60,6 +60,34 @@ appropriate time and disposes handles at scope end. There is no need for separat
 for global and level commands. Duplicate active names or command types throw ArgumentException.
 Same-name conflicts between owners are checked on registration, not globally at compile time.
 
+## Registration modules
+
+A compilation containing valid attributed owners must declare at least one [CmdModule]
+partial class; otherwise the generator reports VARCOM001. No implicit module is generated.
+Compilations without owners do not need a module.
+
+[CmdModule(typeof(OwnerA), typeof(HandlerB))] on an empty partial class emits its typed
+constructor and IDisposable implementation. Explicit lists preserve their declared order;
+an empty list selects all local owners in fully qualified name order. The constructor
+accepts the registry and ready-made instances, atomically registers them and never creates services.
+Groups carry no lifetime enum: the application chooses their composition and activation.
+
+Dispose is idempotent and removes registrations in reverse order. It never disposes owners.
+Constructor failure rolls back previously registered members and owners. Queued calls retain
+binding identity, so disposing/replacing a module cannot redirect old calls to new objects.
+The generated module stores only its disposable registration group and clears it on Dispose.
+
+Modules are concrete non-generic top-level partial classes without custom instance
+constructors, base classes, command declarations or disposal members. Incorrect declarations,
+duplicate member types and unavailable registrations produce VARCOM001. Automatic selection
+is confined to the current compilation. Explicit external owner types are supported through
+their assembly's public generated Register overload, with no runtime reflection.
+
+Module construction/disposal allocates during initialization as registration already does;
+it does not add work or allocations to Enqueue/Update. DI adapters and lifecycle activation
+remain application responsibilities. No processor interface, module interface, resolver
+callback, engine dependency or container dependency is introduced.
+
 ## Text boundary
 
 Enqueue(string) accepts one or more invocations separated by semicolons outside quotes.

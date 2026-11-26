@@ -1,3 +1,4 @@
+using System;
 using Varcom.Contracts;
 
 namespace Varcom.Tests;
@@ -25,7 +26,7 @@ public sealed class GeneratedHandler : ICommandHandler<GeneratedCommand>
 		return CommandResult.Ok(command.Count);
 	}
 }
-public sealed class GeneratedOwner
+public sealed class GeneratedOwner : IDisposable
 {
 	[Var("readonly")] public int ReadOnly => 7;
 	[Var("number")] public int Number { get; set; }
@@ -35,6 +36,8 @@ public sealed class GeneratedOwner
 	[Var("single")] public float Single { get; set; }
 	[Var("double")] public double Double { get; set; }
 	public int Calls { get; private set; }
+	public bool IsDisposed { get; private set; }
+	public void Dispose() => IsDisposed = true;
 
 	[Cmd("method")]
 	public CommandResult Method(CmdString text, bool enabled, float single, double number)
@@ -46,4 +49,8 @@ public sealed class GeneratedOwner
 		Calls++;
 		return CommandResult.Ok(number);
 	}
+}
+[CmdModule]
+public sealed partial class TestModule
+{
 }

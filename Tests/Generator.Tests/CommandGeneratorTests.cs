@@ -45,7 +45,10 @@ public sealed class CommandGeneratorTests
 	}
 
 	private static CSharpCompilation CreateCompilation(string source) => CSharpCompilation.Create("Consumer",
-		new[] { CSharpSyntaxTree.ParseText(source) }, References, new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+		new[]
+		{
+			CSharpSyntaxTree.ParseText(source), CSharpSyntaxTree.ParseText("[Varcom.CmdModule] public partial class TestCommands { }")
+		}, References, new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
 	public static TheoryData<string, string, bool> Declarations()
 	{

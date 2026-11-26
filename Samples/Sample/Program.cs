@@ -2,13 +2,11 @@ using System;
 using Sample;
 using Varcom;
 using Varcom.Contracts;
-using Varcom.Generated.Assembly_Sample;
 
 var registry = new CommandRegistry();
 var inventory = new Inventory();
 var settings = new MovementSettings();
-using var commands = registry.Register(new GiveItemHandler(inventory));
-using var owner = registry.Register(settings);
+using var commands = new GameCommands(registry, new GiveItemHandler(inventory), settings);
 var processor = new CommandProcessor(registry);
 processor.Enqueue("give medkit 2");
 processor.Enqueue("sv_gravity 600");
@@ -20,6 +18,11 @@ if (inventory.Count != 2 || settings.Gravity != 800) throw new Exception("Genera
 
 namespace Sample
 {
+	[CmdModule]
+	public sealed partial class GameCommands
+	{
+	}
+
 	[Cmd("give", "Give an item")]
 	public readonly record struct GiveItemCmd(CmdString ItemId, int Count = 1) : ICommand;
 

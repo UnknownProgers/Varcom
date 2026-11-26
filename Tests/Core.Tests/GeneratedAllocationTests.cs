@@ -44,8 +44,7 @@ public sealed class GeneratedAllocationTests
 		var registry = new CommandRegistry();
 		var handler = new GeneratedHandler();
 		var owner = new GeneratedOwner();
-		using var commands = registry.Register(handler);
-		using var variables = registry.Register(owner);
+		using var commands = new TestModule(registry, handler, owner);
 		var processor = new CommandProcessor(registry, initialCapacity: 128);
 		var completed = 0;
 		var failures = 0;

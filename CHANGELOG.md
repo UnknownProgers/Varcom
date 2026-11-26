@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0-alpha.1 — 2026-11-26
+
+- Require an explicit CmdModule declaration and generate its typed constructor dependencies.
+- Add CmdModule declarations for explicitly selected registration groups.
+- Atomically register groups and dispose only their registration handles, without owning services.
+- Support explicit referenced owners with existing generated registration; validate module declarations.
+
 ## 0.1.0-alpha.3 — 2026-11-26
 
 - Validate arguments during the first lexical pass, removing redundant scanning.

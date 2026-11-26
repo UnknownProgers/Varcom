@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace Varcom;
 
-/// <summary>Registers a generated owner atomically; rolls back if one registration fails.</summary>
+/// <summary>Registers a generated owner or module atomically; rolls back if one registration fails.</summary>
 public static class RegistrationGroup
 {
 	public static IDisposable Create(params Func<IDisposable>[] registrations)
