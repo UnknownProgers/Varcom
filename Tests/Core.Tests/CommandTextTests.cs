@@ -8,12 +8,41 @@ namespace Varcom.Tests;
 
 public sealed class CommandTextTests
 {
+	[Theory]
+	[InlineData("echo plain", "plain")]
+	[InlineData("echo \"\"", "")]
+	[InlineData("echo pre\"mid dle\"post", "premid dlepost")]
+	[InlineData("echo \"a\"\"b\"", "ab")]
+	[InlineData("echo \"a;b\"", "a;b")]
+	[InlineData("echo a\\b", "a\\b")]
+	[InlineData("echo \"a\\qb\"", "a\\qb")]
+	[InlineData("echo \"a\\\\b\"", "a\\b")]
+	[InlineData("echo \"a\\\"b\"", "a\"b")]
+	[InlineData(" ;\t echo\u2003\"привет мир\" ; ; ", "привет мир")]
+	public void Enqueue_PreservesTokenContents(string text, string expected)
+	{
+		var registry = new CommandRegistry();
+		string? received = null;
+		using var registration = registry.RegisterMethod(new("echo", "", new[] { new CommandParameter("text", typeof(CmdString)) }),
+			args =>
+			{
+				received = args.Get<CmdString>(0).ToString();
+				return CommandResult.Ok();
+			});
+		var processor = new CommandProcessor(registry);
+
+		Assert.True(processor.Enqueue(text).IsSuccess);
+		processor.Update();
+
+		Assert.Equal(expected, received);
+	}
+
 	[Fact]
 	public void Enqueue_ValidatesArgumentsAndAppliesOptionalDefaults()
 	{
 		var registry = new CommandRegistry();
 		var value = 0;
-		using var binding = registry.Register(Info(), a => new Add((int)a[0]!, (int)a[1]!),
+		using var binding = registry.Register(Info(), a => new Add(a.Get<int>(0), a.Get<int>(1)),
 			new Handler(c =>
 			{
 				value += c.Value * c.Count;
@@ -36,7 +65,7 @@ public sealed class CommandTextTests
 	{
 		var registry = new CommandRegistry();
 		var calls = 0;
-		using var registration = registry.Register(Info(), args => new Add((int)args[0]!),
+		using var registration = registry.Register(Info(), args => new Add(args.Get<int>(0)),
 			new Handler(_ =>
 			{
 				calls++;
@@ -58,10 +87,10 @@ public sealed class CommandTextTests
 		var registry = new CommandRegistry();
 		string? received = null;
 		using var registration = registry.RegisterMethod(
-			new CommandInfo("echo", "Echo", new[] { new CommandParameter("text", typeof(string)) }),
+			new CommandInfo("echo", "Echo", new[] { new CommandParameter("text", typeof(CmdString)) }),
 			a =>
 			{
-				received = (string)a[0]!;
+				received = a.Get<CmdString>(0).ToString();
 				return CommandResult.Ok();
 			});
 		var processor = new CommandProcessor(registry);
@@ -82,10 +111,10 @@ public sealed class CommandTextTests
 	{
 		var registry = new CommandRegistry();
 		var seen = new List<string>();
-		using var registration = registry.RegisterMethod(new("echo", "", new[] { new CommandParameter("text", typeof(string)) }),
+		using var registration = registry.RegisterMethod(new("echo", "", new[] { new CommandParameter("text", typeof(CmdString)) }),
 			a =>
 			{
-				seen.Add((string)a[0]!);
+				seen.Add(a.Get<CmdString>(0).ToString());
 				return CommandResult.Ok();
 			});
 		var processor = new CommandProcessor(registry);
@@ -101,7 +130,7 @@ public sealed class CommandTextTests
 		var registry = new CommandRegistry();
 		var processor = new CommandProcessor(registry);
 		var order = new List<int>();
-		using var child = registry.Register(Info(), args => new Add((int)args[0]!),
+		using var child = registry.Register(Info(), args => new Add(args.Get<int>(0)),
 			new Handler(c =>
 			{
 				order.Add(c.Value);
@@ -127,7 +156,7 @@ public sealed class CommandTextTests
 	{
 		var registry = new CommandRegistry();
 		var seen = new List<int>();
-		using var registration = registry.Register(Info(), args => new Add((int)args[0]!),
+		using var registration = registry.Register(Info(), args => new Add(args.Get<int>(0)),
 			new Handler(c =>
 			{
 				seen.Add(c.Value);
@@ -150,7 +179,7 @@ public sealed class CommandTextTests
 		var registry = new CommandRegistry();
 		var seen = new List<int>();
 		var processor = new CommandProcessor(registry);
-		using var child = registry.Register(Info(), args => new Add((int)args[0]!),
+		using var child = registry.Register(Info(), args => new Add(args.Get<int>(0)),
 			new Handler(c =>
 			{
 				seen.Add(c.Value);

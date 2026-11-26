@@ -15,13 +15,13 @@ processor.Enqueue("sv_gravity 600");
 processor.Enqueue("reset_gravity");
 processor.Enqueue("sv_gravity");
 if (inventory.Count != 0 || settings.Gravity != 800) throw new Exception("Submission executed user code");
-processor.Update(result => Console.WriteLine(result.IsSuccess ? result.Value : result.Error.Message));
+processor.Update(result => Console.WriteLine(result.IsSuccess ? result.Value.ToString() : result.Error.Message));
 if (inventory.Count != 2 || settings.Gravity != 800) throw new Exception("Generated bindings did not execute");
 
 namespace Sample
 {
 	[Cmd("give", "Give an item")]
-	public readonly record struct GiveItemCmd(string ItemId, int Count = 1) : ICommand;
+	public readonly record struct GiveItemCmd(CmdString ItemId, int Count = 1) : ICommand;
 
 	public sealed class Inventory
 	{
@@ -42,7 +42,7 @@ namespace Sample
 	public sealed class MovementSettings
 	{
 		[Var("sv_gravity", "Gravity")] public float Gravity { get; set; } = 800;
-		[Var("movement_profile", "Profile")] public string Profile => "default";
+		[Var("movement_profile", "Profile")] public CmdString Profile => "default";
 
 		[Cmd("reset_gravity", "Restore default gravity")]
 		public CommandResult ResetGravity()

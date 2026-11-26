@@ -7,7 +7,7 @@
 		<AssemblyName>Varcom</AssemblyName>
 		<RootNamespace>Varcom</RootNamespace>
 		<PackageId>Varcom</PackageId>
-		<Version>0.1.0-alpha.1</Version>
+		<Version>0.1.0-alpha.2</Version>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<PackageLicenseFile>LICENSE</PackageLicenseFile>
 		<Description>A command and console variable framework for games.</Description>
@@ -16,6 +16,7 @@
 		<ProjectReference Include="../Generators/Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all"/>
 		<None Include="../README.md" Pack="true" PackagePath="/"/>
 		<None Include="../LICENSE" Pack="true" PackagePath="/"/>
-		<None Include="../Generators/bin/$(Configuration)/netstandard2.0/Generators.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false"/>
+		<None Include="../Generators/bin/$(Configuration)/netstandard2.0/Generators.dll" Pack="true" PackagePath="analyzers/dotnet/cs"
+			  Visible="false"/>
 	</ItemGroup>
 </Project>

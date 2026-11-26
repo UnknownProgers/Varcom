@@ -10,6 +10,73 @@ namespace Varcom.Tests;
 public sealed class AllocationTests
 {
 	[Fact]
+	public void ResultsFormattingAndUnavailableLookupsDoNotAllocate()
+	{
+		var registry = new CommandRegistry();
+		var processor = new CommandProcessor(registry);
+		Span<char> buffer = stackalloc char[32];
+		for (var i = 0; i < 1000; i++)
+		{
+			CommandResult.Ok(12345).Value.TryFormat(buffer, out _);
+			CommandResult.Fail("Expected failure");
+			registry.ReadVariable("missing");
+			processor.Enqueue(new Add(1));
+		}
+
+		var failures = 0;
+		var before = GC.GetAllocatedBytesForCurrentThread();
+		for (var i = 0; i < 10000; i++)
+		{
+			if (!CommandResult.Ok(12345).Value.TryFormat(buffer, out _)) failures++;
+			if (CommandResult.Fail("Expected failure").IsSuccess) failures++;
+			if (registry.ReadVariable("missing").IsSuccess) failures++;
+			if (processor.Enqueue(new Add(1)).IsSuccess) failures++;
+		}
+
+		var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+		Assert.Equal(0, failures);
+		Assert.Equal(0L, allocated);
+	}
+
+	[Theory]
+	[InlineData("ping", 0)]
+	[InlineData("echo hello", 0)]
+	[InlineData("echo \"hello \\\"world\\\"\"", 0)]
+	public void EnqueueAndUpdate_TextStaysWithinAllocationBudget(string text, int bytesPerCall)
+	{
+		var registry = new CommandRegistry();
+		var calls = 0;
+
+		CommandResult Invoke()
+		{
+			calls++;
+			return CommandResult.Ok();
+		}
+
+		using var ping = registry.RegisterMethod(new("ping", "", Array.Empty<CommandParameter>()), _ => Invoke());
+		using var echo = registry.RegisterMethod(new("echo", "", new[] { new CommandParameter("text", typeof(CmdString)) }),
+			_ => Invoke());
+		var processor = new CommandProcessor(registry);
+		for (var i = 0; i < 1000; i++)
+		{
+			processor.Enqueue(text);
+			processor.Update();
+		}
+
+		const int iterations = 10000;
+		var before = GC.GetAllocatedBytesForCurrentThread();
+		for (var i = 0; i < iterations; i++)
+		{
+			processor.Enqueue(text);
+			processor.Update();
+		}
+
+		var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+		Assert.Equal(iterations + 1000, calls);
+		Assert.InRange(allocated, 0L, (long)bytesPerCall * iterations);
+	}
+
+	[Fact]
 	public void Update_EmptyProcessorDoesNotAllocate()
 	{
 		var processor = new CommandProcessor(new CommandRegistry());
@@ -34,7 +101,7 @@ public sealed class AllocationTests
 	{
 		var registry = new CommandRegistry();
 		var count = 0;
-		using var registration = registry.Register(Info(), a => new Add((int)a[0]!),
+		using var registration = registry.Register(Info(), a => new Add(a.Get<int>(0)),
 			new Handler(c =>
 			{
 				count += c.Value;
@@ -67,7 +134,7 @@ public sealed class AllocationTests
 		var registry = new CommandRegistry();
 		var sum = 0;
 		var wideHandler = new WideHandler();
-		using var first = registry.Register(Info(), a => new Add((int)a[0]!),
+		using var first = registry.Register(Info(), a => new Add(a.Get<int>(0)),
 			new Handler(c =>
 			{
 				sum += c.Value;

@@ -9,11 +9,32 @@ namespace Varcom.Tests;
 public sealed class CommandProcessorTests
 {
 	[Fact]
+	public void ConstructorValidatesCapacityAndTextConstructionWaitsForUpdate()
+	{
+		var registry = new CommandRegistry();
+		Assert.Throws<ArgumentOutOfRangeException>(() => new CommandProcessor(registry, -1));
+		var constructions = 0;
+		using var registration = registry.Register(Info(), args =>
+		{
+			constructions++;
+			if (args.Get<int>(0) < 0) throw new InvalidOperationException("Constructor failure");
+			return new Add(args.Get<int>(0));
+		}, new Handler(_ => CommandResult.Ok()));
+		var processor = new CommandProcessor(registry, 0);
+		Assert.True(processor.Enqueue("add -1; add 2").IsSuccess);
+		Assert.Equal(0, constructions);
+		var results = Collect(processor);
+		Assert.Equal(CommandErrorCode.ExecutionFailed, results[0].Error.Code);
+		Assert.True(results[1].IsSuccess);
+		Assert.Equal(2, constructions);
+	}
+
+	[Fact]
 	public void Enqueue_DoesNotExecuteUntilUpdate()
 	{
 		var registry = new CommandRegistry();
 		var calls = 0;
-		using var binding = registry.Register(Info(), a => new Add((int)a[0]!, (int)a[1]!),
+		using var binding = registry.Register(Info(), a => new Add(a.Get<int>(0), a.Get<int>(1)),
 			new Handler(c =>
 			{
 				calls += c.Value * c.Count;
@@ -36,7 +57,7 @@ public sealed class CommandProcessorTests
 		var registry = new CommandRegistry();
 		var log = new List<int>();
 		var processor = new CommandProcessor(registry);
-		using var binding = registry.Register(Info(), a => new Add((int)a[0]!, (int)a[1]!),
+		using var binding = registry.Register(Info(), a => new Add(a.Get<int>(0), a.Get<int>(1)),
 			new Handler(c =>
 			{
 				log.Add(c.Value);
@@ -59,10 +80,10 @@ public sealed class CommandProcessorTests
 	{
 		var registry = new CommandRegistry();
 		using var registration =
-			registry.Register(Info(), a => new Add((int)a[0]!), new Handler(_ => CommandResult.Fail("Inventory full")));
+			registry.Register(Info(), a => new Add(a.Get<int>(0)), new Handler(_ => CommandResult.Fail("Inventory full")));
 		var processor = new CommandProcessor(registry);
 		processor.Enqueue(new Add(1));
-		Assert.Equal("Inventory full", Collect(processor)[0].Error?.Message);
+		Assert.Equal("Inventory full", Collect(processor)[0].Error.Message);
 	}
 
 	[Fact]
@@ -84,7 +105,7 @@ public sealed class CommandProcessorTests
 	public void Update_DeliversResultsInOrder()
 	{
 		var registry = new CommandRegistry();
-		using var registration = registry.Register(Info(), a => new Add((int)a[0]!),
+		using var registration = registry.Register(Info(), a => new Add(a.Get<int>(0)),
 			new Handler(c => c.Value < 0 ? CommandResult.Fail("Negative value") : CommandResult.Ok(c.Value)));
 		var processor = new CommandProcessor(registry);
 		Assert.True(processor.Enqueue(new Add(1)).IsSuccess);
@@ -92,23 +113,23 @@ public sealed class CommandProcessorTests
 		var results = Collect(processor);
 		Assert.Equal(2, results.Count);
 		Assert.True(results[0].IsSuccess);
-		Assert.Equal(1, Assert.IsType<int>(results[0].Value));
+		Assert.Equal(1, results[0].Value.Get<int>());
 		Assert.False(results[1].IsSuccess);
-		Assert.Equal("Negative value", results[1].Error?.Message);
+		Assert.Equal("Negative value", results[1].Error.Message);
 	}
 
 	[Fact]
 	public void Update_PreservesRemainingCallsWhenCallbackThrows()
 	{
 		var registry = new CommandRegistry();
-		using var registration = registry.Register(Info(), a => new Add((int)a[0]!), new Handler(c => CommandResult.Ok(c.Value)));
+		using var registration = registry.Register(Info(), a => new Add(a.Get<int>(0)), new Handler(c => CommandResult.Ok(c.Value)));
 		var processor = new CommandProcessor(registry);
 		processor.Enqueue(new Add(1));
 		processor.Enqueue(new Add(2));
 		Assert.Throws<InvalidOperationException>(() => processor.Update(_ => throw new InvalidOperationException("Output failed")));
 		var remaining = Collect(processor);
 		Assert.Single(remaining);
-		Assert.Equal(2, Assert.IsType<int>(remaining[0].Value));
+		Assert.Equal(2, remaining[0].Value.Get<int>());
 	}
 
 	[Fact]
@@ -116,7 +137,7 @@ public sealed class CommandProcessorTests
 	{
 		var registry = new CommandRegistry();
 		var seen = new List<int>();
-		using var registration = registry.Register(Info(), a => new Add((int)a[0]!),
+		using var registration = registry.Register(Info(), a => new Add(a.Get<int>(0)),
 			new Handler(c =>
 			{
 				seen.Add(c.Value);

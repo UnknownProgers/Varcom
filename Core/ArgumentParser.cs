@@ -1,101 +1,67 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using Varcom.Contracts;
+using Varcom.Parsing;
 
 namespace Varcom;
 
-internal static class ArgumentParser
+internal sealed class ArgumentParser
 {
-	internal static bool Supports(Type type) => type == typeof(string) || type == typeof(bool)
-		|| type == typeof(int) || type == typeof(float) ||
-		type == typeof(double) || type.IsEnum;
+	private readonly IReadOnlyList<CommandParameter> _parameters;
+	private readonly ValueParser[] _parsers;
+	private readonly CommandValue[] _defaults;
+	private readonly CommandError[] _missingErrors;
+	private readonly CommandError[] _invalidErrors;
+	internal int Count => _parsers.Length;
 
-	internal static string Format(object? value) => value is IFormattable formattable
-		? formattable.ToString(null, CultureInfo.InvariantCulture) ?? ""
-		: value?.ToString() ?? "";
-
-	internal static CommandError? Parse(IReadOnlyList<string> args, IReadOnlyList<CommandParameter> parameters, out object?[] values,
-		int startIndex = 0)
+	internal ArgumentParser(IReadOnlyList<CommandParameter> parameters)
 	{
-		values = parameters.Count == 0 ? Array.Empty<object?>() : new object?[parameters.Count];
-		var argumentCount = args.Count - startIndex;
-		if (argumentCount > parameters.Count)
-			return new CommandError(CommandErrorCode.InvalidArguments, "Too many arguments.");
-
+		_parameters = parameters;
+		_parsers = new ValueParser[parameters.Count];
+		_defaults = new CommandValue[parameters.Count];
+		_missingErrors = new CommandError[parameters.Count];
+		_invalidErrors = new CommandError[parameters.Count];
 		for (var i = 0; i < parameters.Count; i++)
 		{
-			var parameter = parameters[i];
-			if (i >= argumentCount)
-			{
-				if (!parameter.IsOptional)
-					return new CommandError(
-						CommandErrorCode.InvalidArguments,
-						$"Missing argument '{parameter.Name}'.", parameter.Name);
-
-				values[i] = parameter.DefaultValue;
-			}
-			else if (!TryParse(args[i + startIndex], parameter.ValueType, out values[i]))
-				return new CommandError(
-					CommandErrorCode.InvalidArguments,
-					$"Expected {parameter.ValueType.Name} for '{parameter.Name}', got '{args[i + startIndex]}'.", parameter.Name);
+			_parsers[i] = parameters[i].Parser ?? ValueParser.Create(parameters[i].ValueType);
+			_defaults[i] = _parsers[i].Default(parameters[i].DefaultValue);
+			_missingErrors[i] = new(CommandErrorCode.InvalidArguments, $"Missing argument '{parameters[i].Name}'.", parameters[i].Name);
+			_invalidErrors[i] = new(CommandErrorCode.InvalidArguments,
+				$"Expected {parameters[i].ValueType.Name} for '{parameters[i].Name}'.", parameters[i].Name);
 		}
-
-		return null;
 	}
 
-	private static bool TryParse(string text, Type type, out object? value)
+	internal static bool Supports(Type type) => type == typeof(CmdString)
+		|| type == typeof(bool)
+		|| type == typeof(int)
+		|| type == typeof(float)
+		|| type == typeof(double)
+		|| type.IsEnum;
+
+	internal CommandValue Default(int index) => _defaults[index];
+
+	internal bool TryParse(int index, CmdString token, ArgumentBuffer buffer, out CommandValue value) =>
+		_parsers[index].TryParse(token, buffer, out value);
+
+	internal CommandError Validate(string source, int start, int end, int count, ArgumentBuffer buffer)
 	{
-		value = null;
-		if (type == typeof(string))
+		if (count > Count) return new(CommandErrorCode.InvalidArguments, "Too many arguments.");
+		var scanner = new CommandScanner(source, start, end);
+		for (var i = 0; i < Count; i++)
 		{
-			value = text;
-			return true;
-		}
-
-		if (type == typeof(bool))
-		{
-			if (text == "1" || text.Equals("true", StringComparison.OrdinalIgnoreCase))
+			var parameter = _parameters[i];
+			if (i >= count)
 			{
-				value = true;
-				return true;
+				if (!parameter.IsOptional)
+					return _missingErrors[i];
+				continue;
 			}
 
-			if (text == "0" || text.Equals("false", StringComparison.OrdinalIgnoreCase))
-			{
-				value = false;
-				return true;
-			}
-
-			return false;
+			scanner.Read(out var token);
+			if (!TryParse(i, token, buffer, out _))
+				return _invalidErrors[i];
 		}
 
-		if (type == typeof(int) && int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var integer))
-		{
-			value = integer;
-			return true;
-		}
-
-		if (type == typeof(float) && float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var single) &&
-		    float.IsFinite(single))
-		{
-			value = single;
-			return true;
-		}
-
-		if (type == typeof(double) && double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var number) &&
-		    double.IsFinite(number))
-		{
-			value = number;
-			return true;
-		}
-
-		if (type.IsEnum && Enum.TryParse(type, text, true, out var enumeration) && enumeration != null && Enum.IsDefined(type, enumeration))
-		{
-			value = enumeration;
-			return true;
-		}
-
-		return false;
+		return default;
 	}
 }

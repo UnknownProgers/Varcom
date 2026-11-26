@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 
 namespace Varcom.Contracts;
@@ -7,26 +6,27 @@ namespace Varcom.Contracts;
 /// <summary>A value result. For Enqueue, success means accepted, not executed.</summary>
 public readonly record struct CommandResult
 {
-	[MemberNotNullWhen(false, nameof(Error))]
-	public bool IsSuccess => Error is null;
+	public bool IsSuccess => Error.Code == CommandErrorCode.None;
 
-	public CommandError? Error { get; }
-	public object? Value { get; }
+	public CommandError Error { get; }
+	public CommandValue Value { get; }
 
-	private CommandResult(CommandError? error, object? value)
+	private CommandResult(CommandError error, CommandValue value)
 	{
 		Error = error;
 		Value = value;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public static CommandResult Ok(object? value = null) => new(null, value);
+	public static CommandResult Ok(CommandValue value = default) => new(default, value);
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static CommandResult Fail(CommandError error)
 	{
-		ArgumentNullException.ThrowIfNull(error);
-		return new CommandResult(error, null);
+		if (error.Code == CommandErrorCode.None)
+			throw new ArgumentException("Failure needs an error code.", nameof(error));
+
+		return new CommandResult(error, default);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]

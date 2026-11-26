@@ -5,9 +5,9 @@ using Varcom.Contracts;
 namespace Varcom.Processing;
 
 // Payload storage belongs to one processor. The execution queue owns the global order.
-internal sealed class TypedCommandBuffer<TCommand> : ICommandBuffer where TCommand : struct, ICommand
+internal sealed class TypedCommandBuffer<TCommand>(int initialCapacity) : ICommandBuffer where TCommand : struct, ICommand
 {
-	private readonly Queue<TCommand> _commands = new();
+	private readonly Queue<TCommand> _commands = new(initialCapacity);
 
 	internal void Add(in TCommand command) => _commands.Enqueue(command);
 

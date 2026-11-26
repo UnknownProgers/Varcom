@@ -163,7 +163,7 @@ public sealed class CommandGenerator : IIncrementalGenerator
 
 		if (member.IsStatic || !Supported(type))
 		{
-			Report(context, member, "Var needs a supported instance value: string, bool, int, float, double or enum.");
+			Report(context, member, "Var needs a supported instance value: CmdString, bool, int, float, double or enum.");
 			return false;
 		}
 
@@ -180,22 +180,24 @@ public sealed class CommandGenerator : IIncrementalGenerator
 		if (parameters.Any(p => !Supported(p.Type) || p.RefKind != RefKind.None || p.IsParams))
 		{
 			Report(context, owner,
-				"Supported arguments are string, bool, int, float, double and enum; ref/out/in and params are not supported.");
+				"Supported arguments are CmdString, bool, int, float, double and enum; ref/out/in and params are not supported.");
 			return false;
 		}
 
 		return true;
 	}
 
-	private static bool Supported(ITypeSymbol type) => type.TypeKind == TypeKind.Enum || type.SpecialType is
-		SpecialType.System_String or SpecialType.System_Boolean or SpecialType.System_Int32 or SpecialType.System_Single
-		or SpecialType.System_Double;
+	private static bool Supported(ITypeSymbol type) => type.TypeKind == TypeKind.Enum ||
+		type.ToDisplayString() == "Varcom.Contracts.CmdString" || type.SpecialType is
+			SpecialType.System_Boolean or SpecialType.System_Int32
+			or SpecialType.System_Single
+			or SpecialType.System_Double;
 
 	private static string Info(AttributeData attr, IParameterSymbol[] parameters) =>
-		$"new global::Varcom.Contracts.CommandInfo({Text(attr, 0)}, {Text(attr, 1)}, new global::Varcom.Contracts.CommandParameter[] {{ {string.Join(", ", parameters.Select(p => $"new global::Varcom.Contracts.CommandParameter({Literal(p.Name)}, typeof({Type(p.Type)}), {p.HasExplicitDefaultValue.ToString().ToLowerInvariant()}, {Default(p)})"))} }})";
+		$"new global::Varcom.Contracts.CommandInfo({Text(attr, 0)}, {Text(attr, 1)}, new global::Varcom.Contracts.CommandParameter[] {{ {string.Join(", ", parameters.Select(p => $"global::Varcom.Contracts.CommandParameter.Create<{Type(p.Type)}>({Literal(p.Name)}, {p.HasExplicitDefaultValue.ToString().ToLowerInvariant()}, {Default(p)})"))} }})";
 
 	private static string Arguments(IParameterSymbol[] parameters) =>
-		string.Join(", ", parameters.Select((p, i) => $"({Type(p.Type)})args[{i}]!"));
+		string.Join(", ", parameters.Select((p, i) => $"args.Get<{Type(p.Type)}>({i})"));
 
 	private static string Default(IParameterSymbol parameter)
 	{

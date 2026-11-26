@@ -17,7 +17,7 @@ public sealed class LifetimeTests
 		GC.WaitForPendingFinalizers();
 		GC.Collect();
 		Assert.False(owner.IsAlive);
-		Assert.Equal(CommandErrorCode.Unavailable, Collect(processor)[0].Error?.Code);
+		Assert.Equal(CommandErrorCode.Unavailable, Collect(processor)[0].Error.Code);
 	}
 
 	[Fact]

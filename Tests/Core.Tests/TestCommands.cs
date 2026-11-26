@@ -38,7 +38,7 @@ internal static class TestCommands
 	internal static WeakReference RegisterTypedAndDispose(CommandRegistry registry, CommandProcessor processor)
 	{
 		var handler = new Handler(_ => CommandResult.Ok());
-		var registration = registry.Register(Info(), a => new Add((int)a[0]!), handler);
+		var registration = registry.Register(Info(), a => new Add(a.Get<int>(0)), handler);
 		processor.Enqueue(new Add(1));
 		registration.Dispose();
 		return new WeakReference(handler);

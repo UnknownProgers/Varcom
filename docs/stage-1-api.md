@@ -28,11 +28,15 @@ use `Varcom.Bindings`, `Varcom.Parsing` and `Varcom.Processing`.
 - CommandEntry: snapshot of currently registered metadata. Disposed bindings disappear;
   a persistent catalog of unavailable declarations is not included in this iteration.
 - CommandResult: a readonly record struct with IsSuccess, Error and Value; no inheritance.
-  Ok() creates a success without a heap allocation. Fail creates an error result.
+  Ok() and Fail create value results without a heap allocation for an existing message.
+  Error.Code is None for success; Error is no longer a nullable reference.
   Enqueue success means queued; execution success means the handler finished successfully.
   ReadVariable returns the same result with the raw value. Read-only/type metadata is
   already available in VariableInfo; it is not duplicated in the result.
-- CommandError: machine-readable code, message and optional argument name.
+- CommandError: readonly value type with machine-readable code, message and optional argument name.
+- CmdString: immutable view of decoded command text backed by the original input.
+- CommandValue: supported scalar, enum or text value stored without boxing.
+- CommandArguments: generated-binding input; Get<T>(index) reads typed values without object arrays.
 - IDisposable registration handles: idempotently remove their own bindings, not services.
 - RegistrationGroup: atomically connects multiple members of an owner, rolling back on failure.
 
@@ -63,9 +67,10 @@ Tokenization and statement boundaries are handled internally in a single scan. T
 no public Split helper and the caller never needs to split commands manually.
 
 The complete input is parsed before any of its invocations are enqueued. A syntax,
-argument, lookup or factory error rejects this submission without queueing a valid prefix;
+argument or lookup error rejects this submission without queueing a valid prefix;
 previously queued calls remain unchanged. Execution failures are individual results, not
-transaction rollback. Factories must remain side-effect-free as described below.
+transaction rollback. Command factories/constructors run during Update, immediately before
+the handler. Constructor failures are execution failures, not enqueue failures.
 
 Empty segments between separators are ignored; input containing no commands is rejected.
 Whitespace separates arguments; quoted empty strings are preserved. Within quotes,
@@ -75,11 +80,13 @@ whitespace, not separators. Comments/files are host concerns.
 Names use ASCII letters, digits, underscore or dot, begin with a letter, and may have a
 leading +/-. Lookup is ordinal case-insensitive. No automatic +/- generation is performed.
 
-Supported values: string, bool, int, float, double, enum. Boolean input is true/false (case-insensitive) or 1/0; non-finite floats and
+Supported argument/variable values: CmdString, bool, int, float, double, enum. Boolean input is true/false (case-insensitive) or 1/0;
+non-finite floats and
 undefined enum values are rejected.
 Numeric parsing/formatting use invariant culture. Missing required, malformed and extra
 arguments reject the submission. Defaults apply only to explicitly optional parameters.
-Factory constructors must be side-effect-free; the generator cannot enforce constructor purity.
+Command construction does not happen while accepting text. Recheck binding activity after
+construction so a constructor cannot redirect its command to a replacement registration.
 Typed submissions skip parsing, so domain checks belong to handlers and setters.
 
 ## Execution and lifetime
@@ -94,9 +101,10 @@ for each processed invocation, in order. Without a callback the results are disc
 There is no result array, ticket or completion wrapper. Callback exceptions propagate,
 stop the current batch and leave the remaining calls queued; the host owns callback safety.
 
-Variable reads via text are queued and observe preceding writes. Their result Value is
-invariant text. ReadVariable is immediate and returns the raw value without constructing
-a command or formatting a string; the caller chooses presentation.
+Variable reads via text are queued and observe preceding writes. Both queued and immediate reads return
+a typed CommandValue. Use Get<T> for data or TryFormat for invariant text in caller-owned
+space; ToString explicitly materializes a string. ReadVariable is immediate and does not
+construct a command.
 
 Disposal invalidates queued calls via binding identity. They cannot execute on a replacement
 handler with the same type/name. Released bindings clear their owner delegates; externally
@@ -126,14 +134,25 @@ or wrappers. Each processor lazily owns a Queue<T> per concrete typed command. G
 pending entries reference that queue without boxing the command. The shared registry holds
 handlers but never owns payload queues, so processors remain independent.
 
-Release checks on x64 .NET 8 measure zero allocated bytes for warmed-up direct typed calls
-and mixed batches of small/large structs (including reference fields) with a cached result
-callback. This covers the successful typed path, not every API or arbitrary user code.
-First use of a command type and queue growth allocate; warm to expected high-water capacity.
-Enqueue, registration and handlers require `struct, ICommand`; class commands and
-interface-typed submissions are compile-time errors. Text parsing,
-converted values, error objects and user code can still allocate. Returning a value type
-through CommandResult.Ok(object) boxes that result value. Varcom stores no result histories.
+Release checks on x64 .NET 8 measure zero allocated bytes for warmed typed and text calls,
+including escaped text, enums, numeric results, variable reads/writes, expected parse errors,
+metadata reads and a cached result callback formatting into Span<char>. Handlers, callbacks
+and callers remain responsible for their own allocations.
+
+The processor accepts initialCapacity (default 128), used for execution, staging and typed
+queues. First use of a typed queue, runtime cache initialization, registration and capacity
+growth allocate. Numeric/name decoding uses processor-owned scratch space, initially 128
+characters, growing for larger decoded tokens. Text values never refer to this scratch space.
+
+CmdString retains the immutable submitted string and token boundaries. Enumeration,
+Equals and TryCopyTo decode without allocating. ToString is explicit materialization.
+A retained view keeps its entire original string alive, not just the argument range.
+Normal string parameters/variables are rejected by the generator: use CmdString.
+
+CommandValue stores scalars, enums and text without object boxing. CommandError is a struct;
+expected diagnostics use static or registration-time strings. Messages identify the invalid
+parameter and expected type without interpolating the received value on each rejection.
+Dynamic user messages and exceptions can allocate. Varcom stores no result histories.
 
 A disposed typed call still dequeues its data and reports Unavailable; this keeps the
 remaining payloads aligned after re-registration. Typed queues contain no handler references;
@@ -141,23 +160,29 @@ registration disposal clears handler/delegate references in the binding.
 
 ## Architecture stage: explicit definitions and invocations
 
-The public API is unchanged. Internal responsibilities are now separated:
+Responsibilities after the allocation stage:
 
 - CommandRegistry owns name/type lookup, metadata snapshots and registration handles.
 - CommandBinding owns definition lifetime through IsActive and Deactivate. Typed command,
   method and variable bindings each own only their own factory/handler/accessors.
-- CommandLineParser validates text and returns ParsedCommand data. It never schedules work.
+- CommandLineParser validates text into a reusable processor-owned staging list. It never schedules work.
 - CommandProcessor owns all buffers, global execution order, batching and result delivery.
-- QueuedInvocation has explicit typed-buffer and parsed-payload alternatives; it no longer
+- QueuedInvocation has explicit typed-buffer and text-argument alternatives; it no longer
   guesses the invocation kind by testing an object for a private queue interface.
 
 Bindings have no reference to CommandProcessor or its queues. Processor-owned typed buffers
 call the matching typed binding; disposal invalidates old calls and clears owner references.
 Variable capability is explicit through an internal IVariableBinding, separate from activity.
 
-This step deliberately preserves parsed object payloads and runtime argument conversion.
-String boxing, metadata allocations and capacity preparation belong to the next allocation
-stage. Queue capacity/performance tradeoffs are not claimed to be optimized by this refactor.
+Text invocations retain source ranges and parser metadata, not boxed command structs or
+object arrays. Validation parses scalar arguments before acceptance; generated bindings
+read them again during execution and construct commands on the stack. This trades a second
+scalar parse for simple ownership without payload pools. Throughput still needs benchmarking.
+Generated parameter metadata supplies closed generic parsers. Manual enum metadata without
+these generated parsers uses registration-time reflection to construct its generic parser;
+there is no reflection in the warmed enqueue/execute path.
+
+exec and wait remain deferred features.
 
 ## Test organization
 

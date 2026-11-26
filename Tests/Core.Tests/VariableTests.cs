@@ -27,11 +27,12 @@ public sealed class VariableTests
 		var done = Collect(processor);
 		Assert.Equal(600, gravity);
 		Assert.True(done[1].IsSuccess);
-		Assert.Equal("600", Assert.IsType<string>(done[1].Value));
+		Assert.Equal("600", done[1].Value.ToString());
 		Assert.True(registry.ReadVariable("gravity").IsSuccess);
-		Assert.Equal(600f, Assert.IsType<float>(registry.ReadVariable("gravity").Value));
-		using var ro = registry.RegisterVariable(new VariableInfo("profile", "Profile", typeof(string), true), () => "default");
-		Assert.Equal(CommandErrorCode.ReadOnly, processor.Enqueue("profile other").Error?.Code);
+		Assert.Equal(600f, registry.ReadVariable("gravity").Value.Get<float>());
+		using var ro = registry.RegisterVariable(new VariableInfo("profile", "Profile", typeof(CmdString), true),
+			() => new CmdString("default"));
+		Assert.Equal(CommandErrorCode.ReadOnly, processor.Enqueue("profile other").Error.Code);
 	}
 
 	[Fact]
@@ -84,20 +85,20 @@ public sealed class VariableTests
 		var registry = new CommandRegistry();
 		var processor = new CommandProcessor(registry);
 		var calls = 0;
-		using var registration = registry.RegisterVariable(new VariableInfo("profile", "", typeof(string), true),
+		using var registration = registry.RegisterVariable(new VariableInfo("profile", "", typeof(CmdString), true),
 			() =>
 			{
 				calls++;
-				return "default";
+				return new CmdString("default");
 			});
 		registry.GetEntries();
 		Assert.Equal(0, calls);
-		Assert.Equal(CommandErrorCode.ReadOnly, processor.Enqueue("profile changed").Error?.Code);
+		Assert.Equal(CommandErrorCode.ReadOnly, processor.Enqueue("profile changed").Error.Code);
 		Assert.True(processor.Enqueue("profile").IsSuccess);
 		Assert.Equal(0, calls);
 		var result = Collect(processor)[0];
 		Assert.True(result.IsSuccess);
-		Assert.Equal("default", Assert.IsType<string>(result.Value));
+		Assert.Equal("default", result.Value.ToString());
 		Assert.Equal(1, calls);
 	}
 }

@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using Varcom.Contracts;
 
 namespace Varcom.Bindings;
@@ -8,9 +7,9 @@ internal abstract class CommandBinding(CommandInfo info)
 	internal CommandInfo Info { get; } = info;
 	internal bool IsActive { get; private set; } = true;
 
-	internal abstract object? CreatePayload(IReadOnlyList<object?> arguments);
+	internal ArgumentParser Arguments { get; } = new(info.Parameters);
 
-	internal CommandResult Execute(object? payload) => IsActive ? ExecuteCore(payload) : Unavailable();
+	internal CommandResult Execute(CommandArguments arguments) => IsActive ? ExecuteCore(arguments) : Unavailable();
 
 	internal void Deactivate()
 	{
@@ -21,7 +20,7 @@ internal abstract class CommandBinding(CommandInfo info)
 		Release();
 	}
 
-	protected abstract CommandResult ExecuteCore(object? payload);
+	protected abstract CommandResult ExecuteCore(CommandArguments arguments);
 	protected abstract void Release();
 
 	internal static CommandResult Unavailable() => CommandResult.Fail(new CommandError(

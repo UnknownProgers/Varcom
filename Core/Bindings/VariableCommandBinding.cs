@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using Varcom.Contracts;
 
 namespace Varcom.Bindings;
@@ -8,23 +7,21 @@ internal sealed class VariableCommandBinding<T>(
 	CommandInfo info,
 	VariableInfo variableInfo,
 	Func<T> getter,
-	Func<T, CommandResult>? setter) : CommandBinding(info), IVariableBinding
+	Func<T, CommandResult>? setter) : CommandBinding(info), IVariableBinding where T : struct
 {
 	private Func<T>? _getter = getter;
 	private Func<T, CommandResult>? _setter = setter;
 
 	public VariableInfo VariableInfo { get; } = variableInfo;
+	public CommandError ReadOnlyError { get; } = new(CommandErrorCode.ReadOnly, $"Variable '{variableInfo.Name}' is read-only.");
 
-	internal override object CreatePayload(IReadOnlyList<object?> arguments) => arguments;
+	public CommandResult Read() => IsActive ? CommandResult.Ok(CommandValue.From(_getter!())) : Unavailable();
 
-	public CommandResult Read() => IsActive ? CommandResult.Ok(_getter!()) : Unavailable();
-
-	protected override CommandResult ExecuteCore(object? payload)
+	protected override CommandResult ExecuteCore(CommandArguments arguments)
 	{
-		var arguments = (IReadOnlyList<object?>)payload!;
 		return arguments.Count == 0
-			? CommandResult.Ok(ArgumentParser.Format(_getter!()))
-			: _setter!((T)arguments[0]!);
+			? Read()
+			: _setter!(arguments.Get<T>(0));
 	}
 
 	protected override void Release()

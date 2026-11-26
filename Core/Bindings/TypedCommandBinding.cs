@@ -1,25 +1,22 @@
 using System;
-using System.Collections.Generic;
 using Varcom.Contracts;
 
 namespace Varcom.Bindings;
 
 internal sealed class TypedCommandBinding<TCommand>(
 	CommandInfo info,
-	Func<IReadOnlyList<object?>, TCommand> factory,
+	Func<CommandArguments, TCommand> factory,
 	ICommandHandler<TCommand> handler) : CommandBinding(info)
 	where TCommand : struct, ICommand
 {
-	private Func<IReadOnlyList<object?>, TCommand>? _factory = factory;
+	private Func<CommandArguments, TCommand>? _factory = factory;
 	private ICommandHandler<TCommand>? _handler = handler;
-
-	internal override object CreatePayload(IReadOnlyList<object?> arguments) => _factory!(arguments);
 
 	internal CommandResult Handle(in TCommand command) => IsActive ? _handler!.Handle(in command) : Unavailable();
 
-	protected override CommandResult ExecuteCore(object? payload)
+	protected override CommandResult ExecuteCore(CommandArguments arguments)
 	{
-		var command = (TCommand)payload!;
+		var command = _factory!(arguments);
 		return Handle(in command);
 	}
 

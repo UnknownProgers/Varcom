@@ -57,7 +57,7 @@ public sealed class CommandGeneratorTests
 			                                                                 public sealed class Settings
 			                                                                 {
 			                                                                     [Var("gravity")] public float Gravity { get; set; } = 800;
-			                                                                     [Var("profile")] public string Profile => "default";
+			                                                                     [Var("profile")] public CmdString Profile => "default";
 			                                                                     [Cmd("reset")] public CommandResult Reset() { Gravity = 800; return CommandResult.Ok(); }
 			                                                                     [Cmd("noop")] public void Noop() { }
 			                                                                 }
@@ -70,6 +70,19 @@ public sealed class CommandGeneratorTests
 			                                      [CmdHandler(typeof(SetCmd))] public sealed class SetHandler : ICommandHandler<SetCmd>
 			                                      { public CommandResult Handle(in SetCmd c) => CommandResult.Ok(); }
 			                                      """, false),
+			("Text views and optional empty text", """
+			                                       using Varcom;
+			                                       using Varcom.Contracts;
+			                                       [Cmd("text")] public readonly record struct TextCmd(CmdString Text = default) : ICommand;
+			                                       [CmdHandler(typeof(TextCmd))] public sealed class TextHandler : ICommandHandler<TextCmd>
+			                                       { public CommandResult Handle(in TextCmd c) => CommandResult.Ok(c.Text); }
+			                                       public class Owner { [Var("label")] public CmdString Label { get; set; } }
+			                                       """, false),
+			("Allocating string arguments are rejected", """
+			                                             using Varcom;
+			                                             using Varcom.Contracts;
+			                                             public class Owner { [Cmd("bad")] public void Bad(string text) {} }
+			                                             """, true),
 			("Invalid parameter type", """
 			                           using Varcom;
 			                           using Varcom.Contracts;

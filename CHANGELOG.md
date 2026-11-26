@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.0-alpha.2 — 2026-11-26
+
+- Zero-allocation warmed text commands and expected parse failures within buffer capacity.
+- CmdString arguments/variables replace string; CommandValue results replace object.
+- CommandError is a struct; success uses CommandErrorCode.None.
+- Configurable initial processor capacity, default 128; cached metadata snapshots.
+- Text command construction now happens during Update, not Enqueue.
+- Corrected analyzer release tracking table; builds no longer need RS2007 suppression.
+
+Breaking API changes: use CmdString for textual parameters/variables; read results via
+CommandValue.Get<T>() or TryFormat. Error is a value type; check IsSuccess/Error.Code.
+Text command constructor exceptions are reported during Update.
+
+exec and wait remain deferred. Automatic aggregate registration modules are not implemented.
+
 ## 0.1.0-alpha.1 — 2026-11-25
 
 Initial implementation of the engine-independent Varcom runtime and source generator.

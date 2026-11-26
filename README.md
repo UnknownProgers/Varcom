@@ -1,20 +1,34 @@
 # Varcom
 
-Current version: **0.1.0-alpha.1**.
+Current version: **0.1.0-alpha.2**.
 
 A C# command and console variable framework for games, featuring attribute-based
 declarations, source generation, typed handlers, and queued execution.
 
 Varcom has no engine, GUI, logging or DI dependency. The host constructs its services,
 registers their existing instances, and calls `CommandProcessor.Update()` on its game thread.
-The successful typed `Enqueue<T>()` + `Update()` path allocates zero bytes after queues
-have warmed to the required batch capacity, provided the handler/result callback also
-avoids allocations. Typed payloads stay in `Queue<T>`; the global queue stores references
-to those queues and preserves FIFO. No unsafe storage or pooled command wrappers.
-First use of a type and queue growth allocate; string parsing and errors still allocate.
+Successful typed and text `Enqueue` + `Update` paths allocate zero bytes after warmup,
+within the allocated queue/scratch capacity, provided handlers and result callbacks also
+avoid allocations. Expected parsing errors use value results and prebuilt diagnostics.
+`new CommandProcessor(registry, initialCapacity: 128)` sets the initial execution, text
+staging and per-type queue capacity. Buffers grow normally when required; growth allocates.
+Registration, first-use runtime caches and user-created input strings are outside this guarantee.
+
+Text parameters use `CmdString`, not `string`. It retains an immutable view into the
+submitted string, including quote/escape information, and remains valid after execution.
+Use `Equals`, enumeration or `TryCopyTo(Span<char>)` without allocations. `ToString()` explicitly
+materializes decoded text and may allocate. Retaining a small view retains its entire source.
+
+`CommandResult.Value` is a `CommandValue`: use `Get<int>()`, `Get<CmdString>()` or
+`TryFormat(Span<char>, out int)` without boxing or allocating formatted strings. Supported
+values are CmdString, bool, int, float, double and enum. `CommandValue.From(enumValue)`
+creates a typed enum result. `CommandError` is also a value type; check `IsSuccess`, then
+`Error.Code`/`Error.Message`. Expected errors carry stable messages and parameter names;
+the caller retains the submitted input for display. Constructing dynamic messages or
+throwing exceptions can still allocate.
+
 Commands are always structs. Enqueue, registration and handlers enforce `struct, ICommand`;
 class commands and interface-typed submissions are rejected at compile time.
-Returning a value type via `CommandResult.Ok(object)` also boxes that result value.
 
 There is no mandatory invocation context: a method's owner is its registered instance.
 Handlers return a value-type `CommandResult`, including expected business failures.
@@ -46,10 +60,10 @@ var processor = new CommandProcessor(registry);
 processor.Enqueue("give medkit 2");
 processor.Enqueue("capacity 20");
 processor.Update(result =>
-    Console.WriteLine(result.IsSuccess ? result.Value : result.Error.Message));
+    Console.WriteLine(result.IsSuccess ? result.Value.ToString() : result.Error.Message));
 
 [Cmd("give", "Give an item")]
-public readonly record struct GiveItemCmd(string ItemId, int Count = 1) : ICommand;
+public readonly record struct GiveItemCmd(CmdString ItemId, int Count = 1) : ICommand;
 
 [CmdHandler(typeof(GiveItemCmd))]
 public sealed class GiveItemHandler(Inventory inventory) : ICommandHandler<GiveItemCmd>
@@ -84,7 +98,8 @@ processor.Enqueue("give medkit 2; capacity 20");
 ```
 
 Semicolons inside quotes are preserved. A parsing error rejects the whole sequence before
-it enters the queue; existing queued work is untouched. Commands produced by handlers
+it enters the queue; existing queued work is untouched. Command construction is deferred
+until Update, so constructor exceptions are execution failures. Commands produced by handlers
 still wait for the next Update. Execution failures do not roll back prior game actions.
 
 ## Development

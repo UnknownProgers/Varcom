@@ -115,3 +115,36 @@
   generated registration and command/variable execution passed without project references.
 - Added version notes and ignored personal Rider state/artifacts; shared settings are retained.
 - Saved the requested global Rider formatting skill and agent instruction outside the repository.
+
+## Deferred features — 2026-11-26
+
+- Implement `exec` and `wait` later; neither belongs to the current implementation stage.
+- `exec` is a confirmed planned feature. Its command insertion and nested execution semantics
+  will be designed when implementation begins.
+- The scope and timing semantics of `wait` remain to be designed; no global simulation pause
+  or queue-blocking behavior is decided by this note.
+
+## Zero-allocation text execution — 2026-11-26
+
+- Added immutable CmdString source views and typed CommandValue result storage.
+- Replaced object[] arguments and boxed parsed commands with validated source ranges.
+- Command constructors now run during Update, immediately before their handler.
+- Reuse processor staging/scratch buffers; initial queue capacity defaults to 128.
+- Preserve atomic rejection, FIFO, next-update children and disposed-binding identity.
+- Cache metadata snapshots and prepare parameter diagnostics at registration.
+- CommandError is a struct; standard rejections and ready-made business errors allocate zero.
+- 60 Core and 14 Generator cases passed in both configurations; zero-allocation tests
+  cover generated handlers/methods, all supported argument types, reads/writes and TryFormat.
+- Repeated Release profile measured 0 B for successful paths and expected parse failures.
+- Compared 100,000 random inputs with the original scanner; lexical behavior matched.
+- Applied JetBrains Reformat Code with repository settings. Initial checks used temporary
+  RS2007 suppression; the malformed release-table header was subsequently corrected.
+
+## Release verification — 0.1.0-alpha.2
+
+- Set the package and README version to 0.1.0-alpha.2; recorded breaking API changes.
+- Ordinary Release build passed with zero warnings and errors, without NoWarn suppression.
+- All 74 Release xUnit cases passed, including warmed zero-allocation checks.
+- Verified NuGet version/content and ran the generated sample through an isolated
+  PackageReference-only consumer using the new package.
+- Applied project Rider/ReSharper formatting and checked Git whitespace.

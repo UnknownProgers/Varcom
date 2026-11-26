@@ -12,10 +12,12 @@ public sealed class CommandRegistry
 {
 	private readonly Dictionary<string, CommandBinding> _names = new(StringComparer.OrdinalIgnoreCase);
 	private readonly Dictionary<Type, CommandBinding> _types = new();
+	private readonly Dictionary<int, List<CommandBinding>> _nameHashes = new();
+	private IReadOnlyList<CommandEntry>? _entries;
 
 	[EditorBrowsable(EditorBrowsableState.Never)]
 	public IDisposable Register<TCommand>(CommandInfo info,
-		Func<IReadOnlyList<object?>, TCommand> factory,
+		Func<CommandArguments, TCommand> factory,
 		ICommandHandler<TCommand> handler) where TCommand : struct, ICommand
 	{
 		ArgumentNullException.ThrowIfNull(factory);
@@ -24,26 +26,26 @@ public sealed class CommandRegistry
 	}
 
 	[EditorBrowsable(EditorBrowsableState.Never)]
-	public IDisposable RegisterMethod(CommandInfo info, Func<IReadOnlyList<object?>, CommandResult> invoke)
+	public IDisposable RegisterMethod(CommandInfo info, Func<CommandArguments, CommandResult> invoke)
 	{
 		ArgumentNullException.ThrowIfNull(invoke);
 		return Add(new MethodCommandBinding(PrepareInfo(info), invoke));
 	}
 
 	[EditorBrowsable(EditorBrowsableState.Never)]
-	public IDisposable RegisterVariable<T>(VariableInfo info, Func<T> getter, Func<T, CommandResult>? setter = null)
+	public IDisposable RegisterVariable<T>(VariableInfo info, Func<T> getter, Func<T, CommandResult>? setter = null) where T : struct
 	{
 		ArgumentNullException.ThrowIfNull(info);
 		ArgumentNullException.ThrowIfNull(getter);
 		if (info.ValueType != typeof(T) || info.IsReadOnly != (setter == null))
 			throw new ArgumentException("Variable type and read-only metadata must match its binding.", nameof(info));
 
-		var parameters = new[] { new CommandParameter("value", typeof(T), true) };
+		var parameters = new[] { CommandParameter.Create<T>("value", true) };
 		var commandInfo = PrepareInfo(new CommandInfo(info.Name, info.Description, parameters), true);
 		return Add(new VariableCommandBinding<T>(commandInfo, info, getter, setter));
 	}
 
-	public IReadOnlyList<CommandEntry> GetEntries() => Array.AsReadOnly(_names.Values
+	public IReadOnlyList<CommandEntry> GetEntries() => _entries ??= Array.AsReadOnly(_names.Values
 		.Select(binding => new CommandEntry(binding.Info, (binding as IVariableBinding)?.VariableInfo))
 		.ToArray());
 
@@ -51,7 +53,7 @@ public sealed class CommandRegistry
 	{
 		ArgumentNullException.ThrowIfNull(name);
 		if (!_names.TryGetValue(name, out var binding) || binding is not IVariableBinding variable)
-			return CommandResult.Fail(new CommandError(CommandErrorCode.Unavailable, $"Variable '{name}' is unavailable."));
+			return CommandResult.Fail(new CommandError(CommandErrorCode.Unavailable, "Variable is unavailable."));
 		try
 		{
 			return variable.Read();
@@ -62,7 +64,19 @@ public sealed class CommandRegistry
 		}
 	}
 
-	internal bool TryGet(string name, [NotNullWhen(true)] out CommandBinding? binding) => _names.TryGetValue(name, out binding);
+	internal bool TryGet(ReadOnlySpan<char> name, [NotNullWhen(true)] out CommandBinding? binding)
+	{
+		if (_nameHashes.TryGetValue(string.GetHashCode(name, StringComparison.OrdinalIgnoreCase), out var bucket))
+			foreach (var candidate in bucket)
+				if (name.Equals(candidate.Info.Name, StringComparison.OrdinalIgnoreCase))
+				{
+					binding = candidate;
+					return true;
+				}
+
+		binding = null;
+		return false;
+	}
 
 	internal bool TryGet<TCommand>([NotNullWhen(true)] out TypedCommandBinding<TCommand>? binding) where TCommand : struct, ICommand
 	{
@@ -83,12 +97,19 @@ public sealed class CommandRegistry
 			throw new ArgumentException($"Command '{name}' or its type is already registered.");
 
 		_names.Add(name, binding);
+		var hash = string.GetHashCode(name.AsSpan(), StringComparison.OrdinalIgnoreCase);
+		if (!_nameHashes.TryGetValue(hash, out var bucket)) _nameHashes.Add(hash, bucket = new List<CommandBinding>());
+		bucket.Add(binding);
+		_entries = null;
 		if (commandType != null)
 			_types.Add(commandType, binding);
 
 		return new Registration(() =>
 		{
 			_names.Remove(name);
+			bucket.Remove(binding);
+			if (bucket.Count == 0) _nameHashes.Remove(hash);
+			_entries = null;
 			if (commandType != null)
 				_types.Remove(commandType);
 			binding.Deactivate();
@@ -116,7 +137,7 @@ public sealed class CommandRegistry
 			optional |= parameter.IsOptional;
 			if (!variable && parameter.IsOptional &&
 			    (parameter.DefaultValue == null
-				    ? parameter.ValueType.IsValueType
+				    ? parameter.ValueType.IsValueType && parameter.ValueType != typeof(CmdString)
 				    : !parameter.ValueType.IsInstanceOfType(parameter.DefaultValue)))
 				throw new ArgumentException("Optional default does not match parameter type.", nameof(info));
 		}

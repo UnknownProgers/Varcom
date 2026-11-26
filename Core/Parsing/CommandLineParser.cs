@@ -7,56 +7,52 @@ namespace Varcom.Parsing;
 
 internal static class CommandLineParser
 {
-	internal static CommandResult Parse(string commandLine, CommandRegistry registry, out ParsedCommand[] commands)
+	internal static CommandResult Parse(string text, CommandRegistry registry, List<ParsedCommand> commands, ArgumentBuffer buffer)
 	{
-		commands = Array.Empty<ParsedCommand>();
-		var statements = CommandText.Tokenize(commandLine, out var error);
-		if (error != null)
-			return CommandResult.Fail(error);
+		ArgumentNullException.ThrowIfNull(text);
+		var scanner = new CommandScanner(text);
+		CommandBinding? binding = null;
+		var start = 0;
+		var count = 0;
 
-		if (statements.Count == 0)
-			return CommandResult.Fail(CommandErrorCode.InvalidSyntax, "Empty command.");
-
-		var parsed = new ParsedCommand[statements.Count];
-		for (var i = 0; i < statements.Count; i++)
+		while (true)
 		{
-			var result = ParseCommand(statements[i], registry, out parsed[i]);
-			if (!result.IsSuccess)
-				return result;
+			var kind = scanner.Read(out var token);
+			if (kind == TokenKind.Invalid)
+				return CommandResult.Fail(CommandErrorCode.InvalidSyntax, "Unterminated quoted string.");
+
+			if (kind == TokenKind.Token)
+			{
+				if (binding == null)
+				{
+					if (!registry.TryGet(buffer.Decode(token), out binding))
+						return CommandResult.Fail(CommandErrorCode.UnknownCommand, "Unknown command.");
+					start = scanner.Position;
+				}
+				else count++;
+
+				continue;
+			}
+
+			if (binding != null)
+			{
+				if (binding is IVariableBinding variable && variable.VariableInfo.IsReadOnly && count != 0)
+					return CommandResult.Fail(variable.ReadOnlyError);
+
+				var end = kind == TokenKind.Separator ? scanner.Position - 1 : scanner.Position;
+				var error = binding.Arguments.Validate(text, start, end, count, buffer);
+				if (error.Code != CommandErrorCode.None)
+					return CommandResult.Fail(error);
+
+				commands.Add(new ParsedCommand(binding, new CommandArguments(text, start, end, count, binding.Arguments, buffer)));
+				binding = null;
+				count = 0;
+			}
+
+			if (kind == TokenKind.End)
+				break;
 		}
 
-		commands = parsed;
-		return CommandResult.Ok();
-	}
-
-	private static CommandResult ParseCommand(IReadOnlyList<string> tokens, CommandRegistry registry, out ParsedCommand command)
-	{
-		command = default;
-		if (!registry.TryGet(tokens[0], out var binding))
-			return CommandResult.Fail(CommandErrorCode.UnknownCommand, $"Unknown command '{tokens[0]}'.");
-
-		var isVariable = binding is IVariableBinding;
-		var argumentCount = tokens.Count - 1;
-		if (binding is IVariableBinding { VariableInfo.IsReadOnly: true } && argumentCount != 0)
-			return CommandResult.Fail(CommandErrorCode.ReadOnly, $"Variable '{tokens[0]}' is read-only.");
-
-		var error = ArgumentParser.Parse(tokens, binding.Info.Parameters, out var values, 1);
-		if (error != null)
-			return CommandResult.Fail(error);
-
-		try
-		{
-			var arguments = isVariable && argumentCount == 0 ? Array.Empty<object?>() : values;
-			var payload = binding.CreatePayload(arguments);
-			if (!binding.IsActive)
-				return CommandBinding.Unavailable();
-
-			command = new ParsedCommand(binding, payload);
-			return CommandResult.Ok();
-		}
-		catch (Exception ex)
-		{
-			return CommandResult.Fail(CommandErrorCode.InvalidArguments, ex.Message);
-		}
+		return commands.Count == 0 ? CommandResult.Fail(CommandErrorCode.InvalidSyntax, "Empty command.") : CommandResult.Ok();
 	}
 }
