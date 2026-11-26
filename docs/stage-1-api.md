@@ -60,6 +60,32 @@ appropriate time and disposes handles at scope end. There is no need for separat
 for global and level commands. Duplicate active names or command types throw ArgumentException.
 Same-name conflicts between owners are checked on registration, not globally at compile time.
 
+## Metadata catalog
+
+CommandRegistry owns two independent catalogs: GetMetadata returns explicitly loaded
+command/variable declarations, while GetEntries returns active registrations. Both start
+empty. Metadata storage is allocated lazily on the first AddMetadata; registry construction
+and module registration never populate it. No flag or static metadata store exists.
+
+The generator emits a GenerateMetadata(this CommandRegistry) extension in the assembly's
+generated namespace. Calling it creates metadata without owners or handlers. It includes
+local command structs (including those without handlers), command methods, variables and
+referenced command structs used by local handlers. Referenced module owners do not import
+their assembly's metadata; invoke each assembly's generated extension explicitly.
+
+Generated registration code checks ContainsMetadata before constructing an entry. Identity
+uses the runtime Type plus a generated numeric member index (zero for command structs), preserving overloads
+and distinct declarations with the same console name, without storing string IDs. It deduplicates shared command
+structs. ContainsMetadata/AddMetadata are generated-code support APIs hidden from IntelliSense.
+Metadata and parameter collections are immutable snapshots, owned by the registry/caller,
+not static state. Repeated generation skips existing entries and preserves cached snapshots.
+
+IsAvailable(string) checks active registration by case-insensitive name. Generating metadata
+does not activate commands; creating/disposing modules does not change metadata. Active-entry
+snapshots and metadata snapshots are invalidated independently. Reading variable values still
+requires active registration. Execution schemas remain necessary for parsing; generated
+active registrations omit descriptions, which belong to the optional declaration catalog.
+
 ## Registration modules
 
 A compilation containing valid attributed owners must declare at least one [CmdModule]

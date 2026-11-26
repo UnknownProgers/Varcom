@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0-alpha.1 — 2026-11-26
+
+- Store optional declaration metadata and active registrations in independent registry catalogs.
+- Include commands without handlers and expose metadata before game objects exist.
+- Generate an explicit GenerateMetadata extension; add GetMetadata and IsAvailable(name).
+- Allocate declaration metadata only on request, without flags or static storage; deduplicate repeated calls.
+
 ## 0.2.0-alpha.1 — 2026-11-26
 
 - Require an explicit CmdModule declaration and generate its typed constructor dependencies.

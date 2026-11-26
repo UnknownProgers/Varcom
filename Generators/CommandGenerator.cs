@@ -43,6 +43,14 @@ public sealed class CommandGenerator : IIncrementalGenerator
 	{
 		var assembly = compilation.AssemblyName ?? "Application";
 		var registeredOwners = new List<INamedTypeSymbol>();
+		var metadata = new CommandMetadataGenerator(assembly);
+		foreach (var command in symbols.OfType<INamedTypeSymbol>().Where(t => Attribute(t, "Cmd") != null)
+			         .OrderBy(Type, StringComparer.Ordinal))
+		{
+			if (CommandParameters(context, command, out var parameters))
+				metadata.Command(command, Info(Attribute(command, "Cmd")!, parameters, true));
+		}
+
 		var owners = symbols
 			.Where(s => s is IMethodSymbol or IPropertySymbol or IFieldSymbol || Attribute(s, "CmdHandler") != null)
 			.Select(s => s is INamedTypeSymbol t ? t : s.ContainingType)
@@ -61,13 +69,13 @@ public sealed class CommandGenerator : IIncrementalGenerator
 			}
 
 			var registrations = new List<string>();
-			var valid = AddHandler(context, owner, registrations);
+			var valid = AddHandler(context, owner, registrations, metadata);
 			foreach (var member in owner.GetMembers())
 			{
 				if (member is IMethodSymbol method && Attribute(member, "Cmd") is { } cmd)
-					valid &= AddMethod(context, method, cmd, registrations);
+					valid &= AddMethod(context, method, cmd, registrations, metadata);
 				if (Attribute(member, "Var") is { } variable)
-					valid &= AddVariable(context, member, variable, registrations);
+					valid &= AddVariable(context, member, variable, registrations, metadata);
 			}
 
 			if (!valid || registrations.Count == 0)
@@ -85,10 +93,12 @@ public sealed class CommandGenerator : IIncrementalGenerator
 
 		sb.AppendLine("}");
 		context.AddSource("Varcom.Registrations.g.cs", sb.ToString());
+		metadata.Emit(context, compilation);
 		CommandModuleGenerator.Generate(context, compilation, modules.OfType<INamedTypeSymbol>().ToArray(), registeredOwners);
 	}
 
-	private static bool AddHandler(SourceProductionContext context, INamedTypeSymbol owner, List<string> registrations)
+	private static bool AddHandler(SourceProductionContext context, INamedTypeSymbol owner, List<string> registrations,
+		CommandMetadataGenerator metadata)
 	{
 		var attr = Attribute(owner, "CmdHandler");
 		if (attr == null)
@@ -109,6 +119,18 @@ public sealed class CommandGenerator : IIncrementalGenerator
 			return false;
 		}
 
+		if (!CommandParameters(context, command, out var parameters)) return false;
+		metadata.Command(command, Info(declaration, parameters, true));
+		var info = Info(declaration, parameters, false);
+		registrations.Add(
+			$"registry.Register<{Type(command)}>({info}, args => new {Type(command)}({Arguments(parameters)}), owner)");
+		return true;
+	}
+
+	private static bool CommandParameters(SourceProductionContext context, INamedTypeSymbol command, out IParameterSymbol[] parameters)
+	{
+		parameters = Array.Empty<IParameterSymbol>();
+
 		if (command.TypeKind != TypeKind.Struct || command.IsGenericType || command.ContainingType != null ||
 		    command.DeclaredAccessibility != Accessibility.Public ||
 		    !command.AllInterfaces.Any(i => i.ToDisplayString() == "Varcom.Contracts.ICommand"))
@@ -120,7 +142,7 @@ public sealed class CommandGenerator : IIncrementalGenerator
 		var ctors = command.InstanceConstructors
 			.Where(c => c.DeclaredAccessibility == Accessibility.Public && !c.IsImplicitlyDeclared)
 			.ToArray();
-		IParameterSymbol[] parameters;
+
 		if (ctors.Length == 0)
 			parameters = Array.Empty<IParameterSymbol>();
 		else if (ctors.Length == 1)
@@ -131,15 +153,13 @@ public sealed class CommandGenerator : IIncrementalGenerator
 			return false;
 		}
 
-		if (!Parameters(context, command, parameters) || !Name(context, command, declaration))
+		if (!Parameters(context, command, parameters) || !Name(context, command, Attribute(command, "Cmd")!))
 			return false;
-		var args = Arguments(parameters);
-		registrations.Add(
-			$"registry.Register<{Type(command)}>({Info(declaration, parameters)}, args => new {Type(command)}({args}), owner)");
 		return true;
 	}
 
-	private static bool AddMethod(SourceProductionContext context, IMethodSymbol method, AttributeData attr, List<string> registrations)
+	private static bool AddMethod(SourceProductionContext context, IMethodSymbol method, AttributeData attr, List<string> registrations,
+		CommandMetadataGenerator metadata)
 	{
 		if (method.DeclaredAccessibility != Accessibility.Public || method.IsGenericMethod || method.IsAsync ||
 		    method.MethodKind != MethodKind.Ordinary || method.ReturnsByRef || method.ReturnsByRefReadonly ||
@@ -155,11 +175,14 @@ public sealed class CommandGenerator : IIncrementalGenerator
 		var target = method.IsStatic ? Type(method.ContainingType) : "owner";
 		var call = $"{target}.@{method.Name}({Arguments(parameters)})";
 		var body = method.ReturnsVoid ? $"{{ {call}; return global::Varcom.Contracts.CommandResult.Ok(); }}" : call;
-		registrations.Add($"registry.RegisterMethod({Info(attr, parameters)}, args => {body})");
+		metadata.Command(method, Info(attr, parameters, true));
+		var info = Info(attr, parameters, false);
+		registrations.Add($"registry.RegisterMethod({info}, args => {body})");
 		return true;
 	}
 
-	private static bool AddVariable(SourceProductionContext context, ISymbol member, AttributeData attr, List<string> registrations)
+	private static bool AddVariable(SourceProductionContext context, ISymbol member, AttributeData attr, List<string> registrations,
+		CommandMetadataGenerator metadata)
 	{
 		ITypeSymbol type;
 		bool readOnly;
@@ -194,8 +217,15 @@ public sealed class CommandGenerator : IIncrementalGenerator
 
 		var access = "owner.@" + member.Name;
 		var setter = readOnly ? "" : $", value => {{ {access} = value; return global::Varcom.Contracts.CommandResult.Ok(); }}";
-		registrations.Add(
-			$"registry.RegisterVariable<{Type(type)}>(new global::Varcom.Contracts.VariableInfo({Text(attr, 0)}, {Text(attr, 1)}, typeof({Type(type)}), {readOnly.ToString().ToLowerInvariant()}), () => {access}{setter})");
+		var description = Text(attr, 1);
+		var variable =
+			$"new global::Varcom.Contracts.VariableInfo({Text(attr, 0)}, {description}, typeof({Type(type)}), {readOnly.ToString().ToLowerInvariant()})";
+		var info =
+			$"new global::Varcom.Contracts.CommandInfo({Text(attr, 0)}, {description}, new global::Varcom.Contracts.CommandParameter[] {{ new global::Varcom.Contracts.CommandParameter(\"value\", typeof({Type(type)}), true) }})";
+		metadata.Variable(member, info, variable);
+		var variableInfo =
+			$"new global::Varcom.Contracts.VariableInfo({Text(attr, 0)}, {Literal("")}, typeof({Type(type)}), {readOnly.ToString().ToLowerInvariant()})";
+		registrations.Add($"registry.RegisterVariable<{Type(type)}>({variableInfo}, () => {access}{setter})");
 		return true;
 	}
 
@@ -217,14 +247,18 @@ public sealed class CommandGenerator : IIncrementalGenerator
 			or SpecialType.System_Single
 			or SpecialType.System_Double;
 
-	private static string Info(AttributeData attr, IParameterSymbol[] parameters) =>
+	private static string Info(AttributeData attr, IParameterSymbol[] parameters, bool metadata) =>
 		$"new global::Varcom.Contracts.CommandInfo("
-		+ $"{Text(attr, 0)}, {Text(attr, 1)}, new global::Varcom.Contracts.CommandParameter[] "
-		+ $"{{ {string.Join(", ", parameters
-			.Select(p => $"global::Varcom.Contracts.CommandParameter.Create<{Type(p.Type)}>({Literal(p.Name)}, "
-				+ $"{p.HasExplicitDefaultValue.ToString().ToLowerInvariant()}, {Default(p)})"
-			))} }}"
-		+ $")";
+		+ $"{Text(attr, 0)}, {(metadata ? Text(attr, 1) : Literal(""))}, new global::Varcom.Contracts.CommandParameter[] "
+		+ $"{{ {string.Join(", ", parameters.Select(p => Parameter(p, metadata)))} }})";
+
+	private static string Parameter(IParameterSymbol parameter, bool metadata)
+	{
+		var arguments = $"{parameter.HasExplicitDefaultValue.ToString().ToLowerInvariant()}, {Default(parameter)}";
+		return metadata
+			? $"new global::Varcom.Contracts.CommandParameter({Literal(parameter.Name)}, typeof({Type(parameter.Type)}), {arguments})"
+			: $"global::Varcom.Contracts.CommandParameter.Create<{Type(parameter.Type)}>({Literal(parameter.Name)}, {arguments})";
+	}
 
 	private static string Arguments(IParameterSymbol[] parameters) =>
 		string.Join(", ", parameters.Select((p, i) => $"args.Get<{Type(p.Type)}>({i})"));

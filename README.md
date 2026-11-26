@@ -1,6 +1,6 @@
 # Varcom
 
-Current version: **0.2.0-alpha.1**.
+Current version: **0.3.0-alpha.1**.
 
 A C# command and console variable framework for games, featuring attribute-based
 declarations, source generation, typed handlers, and queued execution.
@@ -205,6 +205,75 @@ Semicolons inside quotes are preserved. A parsing error rejects the whole sequen
 it enters the queue; existing queued work is untouched. Command construction is deferred
 until Update, so constructor exceptions are execution failures. Commands produced by handlers
 still wait for the next Update. Execution failures do not roll back prior game actions.
+
+## Declarations and available commands
+
+The registry has two independent catalogs:
+
+| Method          | What it returns                                                                              |
+|-----------------|----------------------------------------------------------------------------------------------|
+| `GetMetadata()` | Declarations explicitly loaded by `GenerateMetadata()`, including commands without handlers. |
+| `GetEntries()`  | Commands and variables registered and available right now.                                   |
+
+Both start empty. Metadata is optional: if you never call `GenerateMetadata()`, its catalog
+stays empty and no storage or declaration entries are created for it. Creating modules does
+not generate metadata. There is no constructor flag and no static metadata store.
+
+The Varcom generator writes the `GenerateMetadata()` extension in your project from its
+attributes. You only call it; you do not describe or register the declarations by hand.
+For a project named MyGame, import `Varcom.Generated.Assembly_MyGame` (punctuation in assembly
+names becomes underscores):
+
+```csharp
+using Varcom.Generated.Assembly_MyGame;
+
+var registry = new CommandRegistry();
+registry.GenerateMetadata(); // Optional. No handlers or variable owners need to exist yet.
+
+foreach (var entry in registry.GetMetadata())
+{
+    var available = registry.IsAvailable(entry.Info.Name);
+    Console.WriteLine($"{entry.Info.Name}: {entry.Info.Description}, available: {available}");
+}
+```
+
+This creates names, descriptions and parameter information in this registry. Variables also
+describe their type and whether they are read-only. It does not create game objects, call
+getters, read variable values or make commands executable.
+
+Later, creating a module connects existing game objects and fills the active catalog.
+Disposing that module removes its active registrations, leaving the metadata unchanged.
+Metadata can also be generated after modules have been created or disposed.
+
+Repeated `GenerateMetadata()` calls skip declarations already present before creating their
+entries. Metadata and active-entry snapshots are read-only and cached until their respective
+catalog changes. Each registry owns its own metadata; generated code holds no static copies.
+If you retain a returned snapshot, that snapshot keeps its entries alive like any other list.
+
+`IsAvailable(name)` checks active names without regard to case. Distinct declarations with
+the same name remain separate metadata entries; availability by name means that some
+registration under that name is active, not necessarily a particular owner. Multiple handlers
+for one command struct share one declaration.
+
+Each generated method covers its assembly's attributed declarations, plus commands referenced
+by its local handlers. It does not scan other assemblies. To include several assemblies, call
+their generated methods explicitly; this also avoids ambiguous extensions when multiple generated
+namespaces are imported:
+
+```csharp
+Varcom.Generated.Assembly_Gameplay.CommandMetadata.GenerateMetadata(registry);
+Varcom.Generated.Assembly_DebugTools.CommandMetadata.GenerateMetadata(registry);
+```
+
+Declarations are deduplicated by their runtime Type and a generated numeric member index,
+not their console name. Type identity already distinguishes assemblies; no string IDs are stored. Explicit module lists do not automatically
+import external metadata.
+
+The first generation and first snapshot read allocate during setup. Without generation,
+`GetMetadata()` returns a shared empty list. Names and argument information needed to parse
+and execute commands still exist in active bindings; normal registration and buffer growth
+still allocate. Generated active registrations omit help descriptions. The warmed execution
+paths remain allocation-free whether or not you generate metadata.
 
 ## Development
 

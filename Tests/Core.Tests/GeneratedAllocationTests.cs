@@ -9,6 +9,26 @@ namespace Varcom.Tests;
 [Trait("Category", "Allocations")]
 public sealed class GeneratedAllocationTests
 {
+	[Fact]
+	public void RepeatedMetadataGenerationAndReadingDoNotAllocate()
+	{
+		var registry = new CommandRegistry();
+		registry.GenerateMetadata();
+		var entries = registry.GetMetadata();
+		for (var i = 0; i < 1000; i++) registry.GenerateMetadata();
+		var before = GC.GetAllocatedBytesForCurrentThread();
+		for (var i = 0; i < 10000; i++)
+		{
+			registry.GenerateMetadata();
+			registry.GetMetadata();
+		}
+
+		var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+		Assert.Equal(0L, allocated);
+		Assert.Same(entries, registry.GetMetadata());
+		Assert.Empty(registry.GetEntries());
+	}
+
 	[Theory]
 	[InlineData("missing", CommandErrorCode.UnknownCommand)]
 	[InlineData("generated ok; missing", CommandErrorCode.UnknownCommand)]
@@ -38,10 +58,13 @@ public sealed class GeneratedAllocationTests
 		Assert.Equal(0L, allocated);
 	}
 
-	[Fact]
-	public void GeneratedBindings_ParseQueueExecuteReadAndFormatWithoutAllocations()
+	[Theory]
+	[InlineData(true)]
+	[InlineData(false)]
+	public void GeneratedBindings_ParseQueueExecuteReadAndFormatWithoutAllocations(bool generateMetadata)
 	{
 		var registry = new CommandRegistry();
+		if (generateMetadata) registry.GenerateMetadata();
 		var handler = new GeneratedHandler();
 		var owner = new GeneratedOwner();
 		using var commands = new TestModule(registry, handler, owner);
@@ -63,6 +86,8 @@ public sealed class GeneratedAllocationTests
 			processor.Update(callback);
 			registry.ReadVariable("number");
 			registry.GetEntries();
+			registry.IsAvailable("number");
+			_ = registry.GetMetadata().Count;
 		}
 
 		const int iterations = 10000;
@@ -73,6 +98,8 @@ public sealed class GeneratedAllocationTests
 			processor.Update(callback);
 			registry.ReadVariable("number");
 			registry.GetEntries();
+			registry.IsAvailable("number");
+			_ = registry.GetMetadata().Count;
 		}
 
 		var allocated = GC.GetAllocatedBytesForCurrentThread() - before;

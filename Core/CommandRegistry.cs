@@ -14,6 +14,8 @@ public sealed class CommandRegistry
 	private readonly Dictionary<Type, CommandBinding> _types = new();
 	private readonly Dictionary<int, List<CommandBinding>> _nameHashes = new();
 	private IReadOnlyList<CommandEntry>? _entries;
+	private Dictionary<(Type Owner, int Member), CommandEntry>? _metadata;
+	private IReadOnlyList<CommandEntry>? _metadataEntries;
 
 	[EditorBrowsable(EditorBrowsableState.Never)]
 	public IDisposable Register<TCommand>(CommandInfo info,
@@ -45,9 +47,43 @@ public sealed class CommandRegistry
 		return Add(new VariableCommandBinding<T>(commandInfo, info, getter, setter));
 	}
 
+	/// <summary>Whether a command or variable with this name is currently registered.</summary>
+	public bool IsAvailable(string name)
+	{
+		ArgumentNullException.ThrowIfNull(name);
+		return _names.ContainsKey(name);
+	}
+
+	/// <summary>Returns currently registered commands and variables.</summary>
 	public IReadOnlyList<CommandEntry> GetEntries() => _entries ??= Array.AsReadOnly(_names.Values
 		.Select(binding => new CommandEntry(binding.Info, (binding as IVariableBinding)?.VariableInfo))
 		.ToArray());
+
+	/// <summary>Returns explicitly generated declarations, including those without active registrations.</summary>
+	public IReadOnlyList<CommandEntry> GetMetadata() => _metadata == null
+		? Array.Empty<CommandEntry>()
+		: _metadataEntries ??= Array.AsReadOnly(_metadata.Values.ToArray());
+
+	[EditorBrowsable(EditorBrowsableState.Never)]
+	public bool ContainsMetadata(Type declarationType, int memberId)
+	{
+		ArgumentNullException.ThrowIfNull(declarationType);
+		return _metadata?.ContainsKey((declarationType, memberId)) == true;
+	}
+
+	[EditorBrowsable(EditorBrowsableState.Never)]
+	public void AddMetadata(Type declarationType, int memberId, CommandInfo info, VariableInfo? variable = null)
+	{
+		ArgumentNullException.ThrowIfNull(declarationType);
+		ArgumentNullException.ThrowIfNull(info);
+		if (ContainsMetadata(declarationType, memberId))
+			return;
+
+		var preparedInfo = PrepareInfo(info, variable != null);
+		_metadata ??= new Dictionary<(Type Owner, int Member), CommandEntry>();
+		_metadata.Add((declarationType, memberId), new CommandEntry(preparedInfo, variable));
+		_metadataEntries = null;
+	}
 
 	public CommandResult ReadVariable(string name)
 	{

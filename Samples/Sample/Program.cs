@@ -2,8 +2,11 @@ using System;
 using Sample;
 using Varcom;
 using Varcom.Contracts;
+using Varcom.Generated.Assembly_Sample;
 
 var registry = new CommandRegistry();
+// Optional: load declarations before constructing game objects. Omit this call if not needed.
+registry.GenerateMetadata();
 var inventory = new Inventory();
 var settings = new MovementSettings();
 using var commands = new GameCommands(registry, new GiveItemHandler(inventory), settings);
