@@ -148,3 +148,16 @@
 - Verified NuGet version/content and ran the generated sample through an isolated
   PackageReference-only consumer using the new package.
 - Applied project Rider/ReSharper formatting and checked Git whitespace.
+
+## Release verification — 0.1.0-alpha.3
+
+- Removed the redundant lexical validation pass in two runtime files without public API changes.
+- Added six diagnostic-priority/atomic-rejection regressions and a separate BenchmarkDotNet project.
+- Preserved baseline, multiple-launch confirmation, full 31-case comparison and raw CSV data.
+- Updated package/README version and changelog; further optimization is deferred to application profiling.
+- Ordinary Release build passed with zero warnings/errors; all 80 Release xUnit cases passed
+  without suppression, including exact zero-allocation checks.
+- Benchmark setup verification passed for all batch sizes and 4/56/128-byte payloads.
+- Verified NuGet 0.1.0-alpha.3 in an isolated PackageReference-only sample; BenchmarkDotNet
+  is absent from the package's runtime dependencies.
+- Applied JetBrains Reformat Code with project settings; repeated pass changed zero files.

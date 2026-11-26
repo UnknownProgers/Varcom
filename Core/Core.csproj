@@ -7,7 +7,7 @@
 		<AssemblyName>Varcom</AssemblyName>
 		<RootNamespace>Varcom</RootNamespace>
 		<PackageId>Varcom</PackageId>
-		<Version>0.1.0-alpha.2</Version>
+		<Version>0.1.0-alpha.3</Version>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<PackageLicenseFile>LICENSE</PackageLicenseFile>
 		<Description>A command and console variable framework for games.</Description>

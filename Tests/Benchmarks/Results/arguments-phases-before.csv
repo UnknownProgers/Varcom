@@ -1,0 +1,3 @@
+Input,BatchSize,EnqueueMedianNsPerCommand,UpdateMedianNsPerCommand,AllocatedBytes
+defaults,128,85.75,36.74,0
+explicit8,128,234.08,183.01,0

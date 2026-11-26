@@ -175,7 +175,7 @@ call the matching typed binding; disposal invalidates old calls and clears owner
 Variable capability is explicit through an internal IVariableBinding, separate from activity.
 
 Text invocations retain source ranges and parser metadata, not boxed command structs or
-object arrays. Validation parses scalar arguments before acceptance; generated bindings
+object arrays. Validation parses scalar arguments on the first lexical pass before acceptance; generated bindings
 read them again during execution and construct commands on the stack. This trades a second
 scalar parse for simple ownership without payload pools. Throughput still needs benchmarking.
 Generated parameter metadata supplies closed generic parsers. Manual enum metadata without

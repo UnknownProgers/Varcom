@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.0-alpha.3 — 2026-11-26
+
+- Validate arguments during the first lexical pass, removing redundant scanning.
+- Preserve diagnostic priority, atomic rejection and warmed zero-allocation behavior.
+- Add six regression cases for competing syntax, count, value and read-only errors.
+- Add a separate BenchmarkDotNet project with 31 scenarios, including 128-byte payloads.
+- Record baseline, repeated-process validation and complete before/after CSV results.
+- Correct the analyzer release-table header present in the previous commit; no RS2007 suppression is needed.
+
+No public API changes. Numeric conversion during execution remains; further performance
+work is deferred until application profiling demonstrates a need.
+
 ## 0.1.0-alpha.2 — 2026-11-26
 
 - Zero-allocation warmed text commands and expected parse failures within buffer capacity.

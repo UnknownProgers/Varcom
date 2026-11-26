@@ -32,35 +32,29 @@ internal sealed class ArgumentParser
 	}
 
 	internal static bool Supports(Type type) => type == typeof(CmdString)
-		|| type == typeof(bool)
-		|| type == typeof(int)
-		|| type == typeof(float)
-		|| type == typeof(double)
-		|| type.IsEnum;
+	                                            || type == typeof(bool)
+	                                            || type == typeof(int)
+	                                            || type == typeof(float)
+	                                            || type == typeof(double)
+	                                            || type.IsEnum;
 
 	internal CommandValue Default(int index) => _defaults[index];
 
 	internal bool TryParse(int index, CmdString token, ArgumentBuffer buffer, out CommandValue value) =>
 		_parsers[index].TryParse(token, buffer, out value);
 
-	internal CommandError Validate(string source, int start, int end, int count, ArgumentBuffer buffer)
-	{
-		if (count > Count) return new(CommandErrorCode.InvalidArguments, "Too many arguments.");
-		var scanner = new CommandScanner(source, start, end);
-		for (var i = 0; i < Count; i++)
-		{
-			var parameter = _parameters[i];
-			if (i >= count)
-			{
-				if (!parameter.IsOptional)
-					return _missingErrors[i];
-				continue;
-			}
+	internal CommandError InvalidArgument(int index) => _invalidErrors[index];
 
-			scanner.Read(out var token);
-			if (!TryParse(i, token, buffer, out _))
-				return _invalidErrors[i];
-		}
+	internal CommandError CompleteValidation(int count, CommandError argumentError)
+	{
+		// Preserve the diagnostic priority: excess arguments, conversion errors, missing arguments.
+		if (count > Count) return new(CommandErrorCode.InvalidArguments, "Too many arguments.");
+		if (argumentError.Code != CommandErrorCode.None)
+			return argumentError;
+
+		for (var i = count; i < Count; i++)
+			if (!_parameters[i].IsOptional)
+				return _missingErrors[i];
 
 		return default;
 	}

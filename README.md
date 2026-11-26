@@ -1,6 +1,6 @@
 # Varcom
 
-Current version: **0.1.0-alpha.2**.
+Current version: **0.1.0-alpha.3**.
 
 A C# command and console variable framework for games, featuring attribute-based
 declarations, source generation, typed handlers, and queued execution.
@@ -120,3 +120,12 @@ Core.Tests separates processor, text, registry, variable, lifetime and allocatio
 Allocation tests use a nonparallel collection and measure only the warmed operation loop;
 Release is recommended for allocation checks. Generator.Tests compiles attributed sources
 and checks emitted code and diagnostics using data-driven theories.
+
+Performance benchmarks live in [Tests/Benchmarks](Tests/Benchmarks/README.md). Run the
+console project in Release; its results are separate from xUnit correctness/allocation tests.
+
+The initial timing report is in [performance-baseline](docs/performance-baseline.md),
+including the requested 128-byte payload comparison and original CSV measurements.
+
+The [argument-validation follow-up](docs/performance-arguments.md) records the first
+measured optimization, preserving zero allocations and existing execution semantics.

@@ -1,6 +1,7 @@
 <Solution>
     <Project Path="Core/Core.csproj"/>
 	<Folder Name="/Tests/">
+		<Project Path="Tests/Benchmarks/Benchmarks.csproj"/>
 		<Project Path="Tests/Core.Tests/Core.Tests.csproj"/>
 		<Project Path="Tests/Generator.Tests/Generator.Tests.csproj"/>
 	</Folder>

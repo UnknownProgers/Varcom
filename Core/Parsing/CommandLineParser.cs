@@ -14,6 +14,7 @@ internal static class CommandLineParser
 		CommandBinding? binding = null;
 		var start = 0;
 		var count = 0;
+		CommandError argumentError = default;
 
 		while (true)
 		{
@@ -29,7 +30,13 @@ internal static class CommandLineParser
 						return CommandResult.Fail(CommandErrorCode.UnknownCommand, "Unknown command.");
 					start = scanner.Position;
 				}
-				else count++;
+				else
+				{
+					if (count < binding.Arguments.Count && argumentError.Code == CommandErrorCode.None &&
+					    !binding.Arguments.TryParse(count, token, buffer, out _))
+						argumentError = binding.Arguments.InvalidArgument(count);
+					count++;
+				}
 
 				continue;
 			}
@@ -40,13 +47,14 @@ internal static class CommandLineParser
 					return CommandResult.Fail(variable.ReadOnlyError);
 
 				var end = kind == TokenKind.Separator ? scanner.Position - 1 : scanner.Position;
-				var error = binding.Arguments.Validate(text, start, end, count, buffer);
+				var error = binding.Arguments.CompleteValidation(count, argumentError);
 				if (error.Code != CommandErrorCode.None)
 					return CommandResult.Fail(error);
 
 				commands.Add(new ParsedCommand(binding, new CommandArguments(text, start, end, count, binding.Arguments, buffer)));
 				binding = null;
 				count = 0;
+				argumentError = default;
 			}
 
 			if (kind == TokenKind.End)

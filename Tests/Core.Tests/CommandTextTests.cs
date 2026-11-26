@@ -9,6 +9,40 @@ namespace Varcom.Tests;
 public sealed class CommandTextTests
 {
 	[Theory]
+	[InlineData("pair bad 2 3", CommandErrorCode.InvalidArguments, "Too many arguments.", null)]
+	[InlineData("pair bad", CommandErrorCode.InvalidArguments, "Expected Int32 for 'first'.", "first")]
+	[InlineData("pair 1", CommandErrorCode.InvalidArguments, "Missing argument 'second'.", "second")]
+	[InlineData("pair bad \"unfinished", CommandErrorCode.InvalidSyntax, "Unterminated quoted string.", null)]
+	[InlineData("readonly bad extra", CommandErrorCode.ReadOnly, "Variable 'readonly' is read-only.", null)]
+	[InlineData("readonly bad \"unfinished", CommandErrorCode.InvalidSyntax, "Unterminated quoted string.", null)]
+	public void Enqueue_PreservesDiagnosticPriorityAndRejectsTheWholeSequence(string text, CommandErrorCode code,
+		string message, string? argumentName)
+	{
+		var registry = new CommandRegistry();
+		var calls = 0;
+		using var command = registry.RegisterMethod(new("pair", "", new[]
+		{
+			new CommandParameter("first", typeof(int)), new CommandParameter("second", typeof(int))
+		}), _ =>
+		{
+			calls++;
+			return CommandResult.Ok();
+		});
+		using var variable = registry.RegisterVariable(new("readonly", "", typeof(int), true), () => 1);
+		var processor = new CommandProcessor(registry);
+		Assert.True(processor.Enqueue("pair 1 2").IsSuccess);
+
+		var result = processor.Enqueue("pair 1 2; " + text);
+
+		Assert.False(result.IsSuccess);
+		Assert.Equal(code, result.Error.Code);
+		Assert.Equal(message, result.Error.Message);
+		Assert.Equal(argumentName, result.Error.ArgumentName);
+		processor.Update();
+		Assert.Equal(1, calls);
+	}
+
+	[Theory]
 	[InlineData("echo plain", "plain")]
 	[InlineData("echo \"\"", "")]
 	[InlineData("echo pre\"mid dle\"post", "premid dlepost")]
