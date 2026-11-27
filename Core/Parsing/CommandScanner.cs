@@ -1,3 +1,5 @@
+#nullable enable
+
 using Varcom.Contracts;
 
 namespace Varcom.Parsing;

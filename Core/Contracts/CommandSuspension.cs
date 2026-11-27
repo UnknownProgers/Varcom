@@ -1,3 +1,5 @@
+#nullable enable
+
 namespace Varcom.Contracts;
 
 /// <summary>Identifies one external suspension of one processor. Default and stale values cannot resume it.</summary>

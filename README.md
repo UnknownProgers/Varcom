@@ -111,6 +111,14 @@ handles on the same game thread.
 ## Quick start
 
 Reference the Varcom package. It includes the runtime and the source generator.
+
+```sh
+dotnet add package Varcom --version 0.5.0-alpha.1
+```
+
+Varcom is available on [nuget.org](https://www.nuget.org/packages/Varcom/0.5.0-alpha.1).
+For local package builds and publishing, see
+[publishing instructions](https://github.com/UnknownProgers/Varcom/blob/master/docs/publishing.md).
 Declare a partial class with `[CmdModule]` to group your commands.
 
 ```csharp
@@ -194,8 +202,8 @@ constructed over already-active registrations for the same commands.
 
 For `+`/`-` bindings declare explicit command names; no automatic pairing is introduced.
 
-See the [complete sample](Samples/Sample/Program.cs) and
-[execution/API rules](docs/stage-1-api.md).
+See the [complete sample](https://github.com/UnknownProgers/Varcom/blob/master/Samples/Sample/Program.cs) and
+[execution/API rules](https://github.com/UnknownProgers/Varcom/blob/master/docs/stage-1-api.md).
 
 A single submission can contain a command sequence:
 
@@ -391,7 +399,10 @@ paths remain allocation-free whether or not you generate metadata.
 
 ## Development
 
-The repository uses .NET 8/C# 12. The generator targets netstandard2.0 and Roslyn 4.8.
+The repository uses .NET 8/C# 12. Core uses file-local `#nullable enable`; internal projects (generator implementation, tests, benchmarks
+and sample) use project-wide nullable. Generated
+files declare their own nullable context; consumers do not need to enable it in their projects. The generator targets netstandard2.0 and
+Roslyn 4.8.
 The included .slnx requires a newer IDE/SDK to open; with SDK 8 build the project paths below.
 
 ```sh
@@ -408,11 +419,11 @@ Allocation tests use a nonparallel collection and measure only the warmed operat
 Release is recommended for allocation checks. Generator.Tests compiles attributed sources
 and checks emitted code and diagnostics using data-driven theories.
 
-Performance benchmarks live in [Tests/Benchmarks](Tests/Benchmarks/README.md). Run the
+Performance benchmarks live in [Tests/Benchmarks](https://github.com/UnknownProgers/Varcom/blob/master/Tests/Benchmarks/README.md). Run the
 console project in Release; its results are separate from xUnit correctness/allocation tests.
 
-The initial timing report is in [performance-baseline](docs/performance-baseline.md),
+The initial timing report is in [performance-baseline](https://github.com/UnknownProgers/Varcom/blob/master/docs/performance-baseline.md),
 including the requested 128-byte payload comparison and original CSV measurements.
 
-The [argument-validation follow-up](docs/performance-arguments.md) records the first
+The [argument-validation follow-up](https://github.com/UnknownProgers/Varcom/blob/master/docs/performance-arguments.md) records the first
 measured optimization, preserving zero allocations and existing execution semantics.

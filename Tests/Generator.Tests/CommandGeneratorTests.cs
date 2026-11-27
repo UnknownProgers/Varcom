@@ -44,6 +44,42 @@ public sealed class CommandGeneratorTests
 			$"{scenario}: expected a struct constraint error");
 	}
 
+	[Theory]
+	[InlineData(NullableContextOptions.Disable)]
+	[InlineData(NullableContextOptions.Enable)]
+	public void GeneratedFilesOwnTheirNullableContext(NullableContextOptions context)
+	{
+		var source = """
+		             using Varcom;
+		             using Varcom.Contracts;
+		             [Cmd("add")] public readonly record struct AddCommand(int Count) : ICommand;
+		             [CmdHandler(typeof(AddCommand))]
+		             public sealed class AddHandler : ICommandHandler<AddCommand>
+		             {
+		                 public CommandResult Handle(in AddCommand command) => CommandResult.Ok();
+		             }
+		             public sealed class Settings
+		             {
+		                 [Var("number")] public int Number { get; set; }
+		                 [Cmd("ping")] public void Ping() { }
+		             }
+		             [CmdModule] public sealed partial class ConsumerCommands { }
+		             """;
+		if (context == NullableContextOptions.Disable)
+			source += "public static class ConsumerState { public static string Value() => null; }";
+		var compilation = CSharpCompilation.Create("NullableConsumer",
+			new[] { CSharpSyntaxTree.ParseText(source) }, References,
+			new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: context));
+		GeneratorDriver driver = CSharpGeneratorDriver.Create(new CommandGenerator().AsSourceGenerator());
+		driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out var diagnostics);
+		Assert.DoesNotContain(output.GetDiagnostics().Concat(diagnostics),
+			d => d.Severity is DiagnosticSeverity.Warning or DiagnosticSeverity.Error);
+		Assert.Equal(context, ((CSharpCompilation)output).Options.NullableContextOptions);
+		var generated = output.SyntaxTrees.Except(compilation.SyntaxTrees).ToArray();
+		Assert.NotEmpty(generated);
+		Assert.All(generated, tree => Assert.Contains("#nullable enable", tree.ToString()));
+	}
+
 	private static CSharpCompilation CreateCompilation(string source) => CSharpCompilation.Create("Consumer",
 		new[]
 		{

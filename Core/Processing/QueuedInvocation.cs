@@ -1,3 +1,5 @@
+#nullable enable
+
 using System.Buffers;
 using Varcom.Bindings;
 using Varcom.Contracts;

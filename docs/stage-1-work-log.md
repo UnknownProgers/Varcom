@@ -258,3 +258,51 @@
 - Final validation: 126 Core tests and 49 generator tests passed in Release. The sample
   completed both waiting modes, and Varcom.0.5.0-alpha.1.nupkg built successfully.
   Warmed allocation tests and git diff --check passed; JetBrains Reformat Code was applied.
+
+## NuGet publication preparation — 2026-11-27
+
+- Selected rounded white/turquoise VC icon; kept generated pixels and optimized PNG encoding losslessly.
+- Added author, MIT expression, repository/project URLs, tags, release notes, package icon and snupkg output.
+- Corrected global.json to a valid .NET 8 SDK version and compatible feature-band roll-forward.
+- Added validation CI and manually dispatched NuGet Trusted Publishing workflow; no remote publication run.
+- Added archive verification and a standalone consumer using only the packed runtime/generator.
+- Local source mapping forces Varcom to the candidate feed while allowing SDK reference restores.
+- Validation: 126 runtime tests, 49 generator tests, sample, packed-consumer smoke and package
+  verification passed. Inspected icon at 128/64/32px. Parsed workflow YAML and verified manual
+  publish trigger/validation dependency. Remote Actions and account setup remain unexecuted.
+- Current candidate: Varcom.0.5.0-alpha.1.nupkg and matching symbols in artifacts/packages.
+
+## User-supplied package logo — 2026-11-27
+
+- Replaced generated VC branding with the upper-left white/blue double-chevron from the
+  user's Untitled.png sheet. The 320x320 crop preserves source pixels exactly, with no
+  generation, rescaling, recoloring or retouching. Recorded crop coordinates and source hash.
+- Rebuilt the 0.5.0-alpha.1 package and verified its embedded icon matches assets/icon.png.
+
+## Simplified publication workflow — 2026-11-27
+
+- Removed the separate CI YAML, standalone package-smoke project and archive verification script.
+- Combined tests, package artifacts, tagged NuGet publication and GitHub Release attachments
+  into one publish.yml, following Injectra's v* tag/release convention.
+- NuGet trust now uses the repository NUGET_USER variable without a GitHub environment.
+- Updated publication instructions; no tag, push or remote publication was performed.
+
+## File-local nullable context and registry package — 2026-11-27
+
+- Removed Nullable=enable from all six project files; each C# source now owns its nullable
+  context through #nullable enable. Generated sources already declare their own context.
+- Added generator regressions for enabled and disabled consumer nullable contexts.
+- Validation: 126 Core tests, 51 generator tests, sample and benchmark build passed.
+  A temporary consumer without Nullable settings or source directives successfully built and
+  ran against the packed package with warnings as errors. No permanent consumer project added.
+- Built Varcom.0.5.0-alpha.1.nupkg and .snupkg under artifacts/packages. Verified selected
+  icon, runtime/generator contents and absence of consumer MSBuild props/targets.
+- Applied JetBrains Reformat Code with project settings. No registry publication performed.
+
+## Nullable scope correction — 2026-11-27
+
+- Restored Nullable=enable in internal projects: generator implementation, both test projects,
+  benchmarks and sample. Removed their redundant file-level headers.
+- Core retains local directives; generated files retain their own #nullable enable.
+- Generator tests pass for consumers with nullable disabled or enabled; the consumer project
+  options are unchanged by generation. No published package was replaced or republished.

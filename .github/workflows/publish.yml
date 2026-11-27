@@ -1,0 +1,105 @@
+name: Build and publish
+
+on:
+  push:
+    branches: [ master ]
+    tags: [ 'v*' ]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 8.0.x
+      - name: Read version and check release tag
+        id: version
+        shell: bash
+        run: |
+          version="$(dotnet msbuild Core/Core.csproj -getProperty:PackageVersion)"
+          if [[ "$GITHUB_REF" == refs/tags/v* && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::Release tag must match project version v$version."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Test runtime
+        run: dotnet test Tests/Core.Tests/Core.Tests.csproj -c Release -p:ContinuousIntegrationBuild=true
+      - name: Test generator
+        run: dotnet test Tests/Generator.Tests/Generator.Tests.csproj -c Release -p:ContinuousIntegrationBuild=true
+      - name: Pack
+        run: dotnet pack Core/Core.csproj -c Release --no-build --no-restore -p:ContinuousIntegrationBuild=true -o artifacts/packages
+      - uses: actions/upload-artifact@v7
+        with:
+          name: varcom-nuget
+          path: artifacts/packages/*
+          if-no-files-found: error
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      PACKAGE_VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 8.0.x
+      - uses: actions/download-artifact@v8
+        with:
+          name: varcom-nuget
+          path: artifacts/packages
+      - name: Check NuGet account
+        env:
+          NUGET_USER: ${{ vars.NUGET_USER }}
+        shell: bash
+        run: |
+          if [[ -z "$NUGET_USER" ]]; then
+            echo "::error::Set the NUGET_USER repository variable to your NuGet username."
+            exit 1
+          fi
+      - name: Log in to NuGet
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ vars.NUGET_USER }}
+      - name: Publish package and symbols
+        env:
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        shell: bash
+        run: |
+          dotnet nuget push "artifacts/packages/Varcom.$PACKAGE_VERSION.nupkg" \
+            --no-symbols --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
+          dotnet nuget push "artifacts/packages/Varcom.$PACKAGE_VERSION.snupkg" \
+            --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
+      - name: Create GitHub Release and attach packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          package="artifacts/packages/Varcom.$PACKAGE_VERSION.nupkg"
+          symbols="artifacts/packages/Varcom.$PACKAGE_VERSION.snupkg"
+          if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "$package" "$symbols" --clobber
+          else
+            options=(--verify-tag --generate-notes --title "$RELEASE_TAG")
+            if [[ "$PACKAGE_VERSION" == *-* ]]; then
+              options+=(--prerelease)
+            fi
+            gh release create "$RELEASE_TAG" "$package" "$symbols" "${options[@]}"
+          fi

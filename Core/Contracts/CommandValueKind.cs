@@ -1,3 +1,5 @@
+#nullable enable
+
 namespace Varcom.Contracts;
 
 public enum CommandValueKind
