@@ -17,9 +17,8 @@ internal abstract class ValueParser
 		if (type == typeof(float)) return new ValueParser<float>();
 		if (type == typeof(double)) return new ValueParser<double>();
 		if (type == typeof(CmdString)) return new ValueParser<CmdString>();
-		// Generated bindings supply closed generic parsers; reflection is only the manual enum fallback.
-		if (type.IsEnum) return (ValueParser)Activator.CreateInstance(typeof(ValueParser<>).MakeGenericType(type), true)!;
-		throw new ArgumentException("Unsupported argument type.", nameof(type));
+		// Registration validates supported types. The remaining case is a manually declared enum.
+		return (ValueParser)Activator.CreateInstance(typeof(ValueParser<>).MakeGenericType(type), true)!;
 	}
 }
 internal sealed class ValueParser<T> : ValueParser where T : struct

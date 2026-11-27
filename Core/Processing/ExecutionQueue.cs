@@ -11,7 +11,7 @@ internal sealed class ExecutionQueue(int capacity)
 		internal int Next;
 	}
 
-	private Node[] _nodes = CreateNodes(capacity);
+	private Node[] _nodes = new Node[capacity];
 	private int _allocated;
 	private int _free = -1;
 	private int _head = -1;
@@ -84,12 +84,6 @@ internal sealed class ExecutionQueue(int capacity)
 			_tail = previous;
 
 		Release(boundary);
-	}
-
-	private static Node[] CreateNodes(int capacity)
-	{
-		ArgumentOutOfRangeException.ThrowIfNegative(capacity);
-		return new Node[capacity];
 	}
 
 	private int Allocate(QueuedInvocation invocation)

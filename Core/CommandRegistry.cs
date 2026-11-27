@@ -134,7 +134,9 @@ public sealed class CommandRegistry
 
 		_names.Add(name, binding);
 		var hash = string.GetHashCode(name.AsSpan(), StringComparison.OrdinalIgnoreCase);
-		if (!_nameHashes.TryGetValue(hash, out var bucket)) _nameHashes.Add(hash, bucket = new List<CommandBinding>());
+		if (!_nameHashes.TryGetValue(hash, out var bucket))
+			_nameHashes.Add(hash, bucket = new List<CommandBinding>());
+
 		bucket.Add(binding);
 		_entries = null;
 		if (commandType != null)
@@ -144,10 +146,13 @@ public sealed class CommandRegistry
 		{
 			_names.Remove(name);
 			bucket.Remove(binding);
-			if (bucket.Count == 0) _nameHashes.Remove(hash);
+			if (bucket.Count == 0)
+				_nameHashes.Remove(hash);
+
 			_entries = null;
 			if (commandType != null)
 				_types.Remove(commandType);
+
 			binding.Deactivate();
 		});
 	}
@@ -162,17 +167,22 @@ public sealed class CommandRegistry
 	{
 		ArgumentNullException.ThrowIfNull(info);
 		ArgumentNullException.ThrowIfNull(info.Parameters);
-		if (!ValidName(info.Name)) throw new ArgumentException("Invalid command name.", nameof(info));
+		if (!ValidName(info.Name))
+			throw new ArgumentException("Invalid command name.", nameof(info));
+
 		var optional = false;
 		foreach (var parameter in info.Parameters)
 		{
 			if (parameter == null || string.IsNullOrWhiteSpace(parameter.Name) || !ArgumentParser.Supports(parameter.ValueType))
 				throw new ArgumentException("Unsupported command parameter.", nameof(info));
+
 			if (optional && !parameter.IsOptional)
 				throw new ArgumentException("Required arguments must precede optional arguments.", nameof(info));
+
 			optional |= parameter.IsOptional;
-			if (!variable && parameter.IsOptional &&
-			    (parameter.DefaultValue == null
+			if (!variable
+			    && parameter.IsOptional
+			    && (parameter.DefaultValue == null
 				    ? parameter.ValueType.IsValueType && parameter.ValueType != typeof(CmdString)
 				    : !parameter.ValueType.IsInstanceOfType(parameter.DefaultValue)))
 				throw new ArgumentException("Optional default does not match parameter type.", nameof(info));
@@ -184,10 +194,16 @@ public sealed class CommandRegistry
 
 	private static bool ValidName(string? name)
 	{
-		if (string.IsNullOrEmpty(name)) return false;
+		if (string.IsNullOrEmpty(name))
+			return false;
+
 		var start = name[0] is '+' or '-' ? 1 : 0;
-		if (start == name.Length || !char.IsAsciiLetter(name[start])) return false;
-		return name.Skip(start + 1).All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '.');
+		if (start == name.Length || !char.IsAsciiLetter(name[start]))
+			return false;
+
+		return name
+			.Skip(start + 1)
+			.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '.');
 	}
 
 	private sealed class Registration(Action release) : IDisposable

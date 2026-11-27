@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 
 namespace Varcom.Parsing;
 
+// Called only for enum types, whose underlying storage is always 1, 2, 4 or 8 bytes.
 internal static class EnumBits<T> where T : struct
 {
 	internal static readonly bool IsSigned = typeof(T).IsEnum && Type.GetTypeCode(Enum.GetUnderlyingType(typeof(T))) is
@@ -13,8 +14,7 @@ internal static class EnumBits<T> where T : struct
 		1 => IsSigned ? unchecked((ulong)Unsafe.As<T, sbyte>(ref value)) : Unsafe.As<T, byte>(ref value),
 		2 => IsSigned ? unchecked((ulong)Unsafe.As<T, short>(ref value)) : Unsafe.As<T, ushort>(ref value),
 		4 => IsSigned ? unchecked((ulong)Unsafe.As<T, int>(ref value)) : Unsafe.As<T, uint>(ref value),
-		8 => Unsafe.As<T, ulong>(ref value),
-		_ => throw new InvalidOperationException()
+		_ => Unsafe.As<T, ulong>(ref value)
 	};
 
 	internal static T From(ulong bits)
@@ -30,10 +30,8 @@ internal static class EnumBits<T> where T : struct
 			case 4:
 				var i = (uint)bits;
 				return Unsafe.As<uint, T>(ref i);
-			case 8:
-				return Unsafe.As<ulong, T>(ref bits);
 			default:
-				throw new InvalidOperationException();
+				return Unsafe.As<ulong, T>(ref bits);
 		}
 	}
 }

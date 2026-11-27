@@ -1,4 +1,3 @@
-using System;
 using System.Buffers;
 using System.Collections.Generic;
 using Varcom.Contracts;
@@ -15,7 +14,6 @@ internal sealed class CommandTextPreparer(int initialCapacity)
 
 	internal PreparedTextCommands Prepare(string text)
 	{
-		ArgumentNullException.ThrowIfNull(text);
 		var scanner = new CommandScanner(text, separateLines: true);
 		try
 		{
@@ -25,26 +23,13 @@ internal sealed class CommandTextPreparer(int initialCapacity)
 					return new PreparedTextCommands(this, result);
 
 				var tokens = ArrayPool<CmdString>.Shared.Rent(_tokens.Count);
-				try
-				{
-					_tokens.CopyTo(tokens);
-					_commands.Add(QueuedInvocation.FromText(new CommandInvocation(tokens, _tokens.Count), rentedTokens: true));
-				}
-				catch
-				{
-					ArrayPool<CmdString>.Shared.Return(tokens, clearArray: true);
-					throw;
-				}
+				_tokens.CopyTo(tokens);
+				_commands.Add(QueuedInvocation.FromText(new CommandInvocation(tokens, _tokens.Count), rentedTokens: true));
 			}
 
 			return new PreparedTextCommands(this, _commands.Count == 0
 				? CommandResult.Fail(CommandErrorCode.InvalidSyntax, "Empty command.")
 				: CommandResult.Ok());
-		}
-		catch
-		{
-			ReleaseRemaining();
-			throw;
 		}
 		finally
 		{
