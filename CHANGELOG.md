@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.0-alpha.1 — 2026-11-27
+
+- Scope frame and external waits to independently submitted command sequences.
+- Keep other sequences runnable while one waits; process ready sequences in submission order.
+- Make handler Insert calls extend their caller, including nested exec continuations.
+- Bind external signals to individual sequence generations and defer resumption to the next Update.
+- Reuse sequence storage and command nodes without warmed execution allocations.
+- Cover independent waits, nested exec, ten concurrent sequences and a six-sequence timeline.
+
+Breaking behavior: each Enqueue call creates one sequence. Outside execution, each Insert call
+creates an independent sequence before pending work. WaitFrames and Suspend now require an
+executing command or completion callback; they no longer pause the entire processor.
+
 ## 0.5.0-alpha.1 — 2026-11-27
 
 - Add WaitFrames during or between updates, counting calls to the single Update(callback) method.

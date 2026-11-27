@@ -4,7 +4,7 @@ using System;
 
 namespace Varcom.Processing;
 
-// Array-backed linked nodes: insertion never moves pending invocations.
+// Sequences share array-backed command nodes. Insertion never moves pending invocations.
 internal sealed class ExecutionQueue(int capacity)
 {
 	private struct Node
@@ -16,76 +16,110 @@ internal sealed class ExecutionQueue(int capacity)
 	private Node[] _nodes = new Node[capacity];
 	private int _allocated;
 	private int _free = -1;
-	private int _head = -1;
-	private int _tail = -1;
-	private int _insertionTail = -1;
-	internal int First => _head;
+	private CommandSequence? _freeSequences;
+	private CommandSequence? _insertionTail;
+	internal CommandSequence? First { get; private set; }
+	internal CommandSequence? Last { get; private set; }
 
-	internal int Enqueue(QueuedInvocation invocation)
+	internal CommandSequence CreateSequence(bool insert = false)
 	{
-		var index = Allocate(invocation);
-		if (_tail < 0)
-			_head = index;
+		var sequence = _freeSequences;
+		if (sequence == null)
+			sequence = new CommandSequence();
 		else
-			_nodes[_tail].Next = index;
-		_tail = index;
-		return index;
+		{
+			_freeSequences = sequence.Next;
+			sequence.Next = null;
+		}
+
+		var previous = insert ? _insertionTail : Last;
+		var next = previous == null ? First : previous.Next;
+		sequence.Previous = previous;
+		sequence.Next = next;
+
+		if (previous == null)
+			First = sequence;
+		else previous.Next =
+			sequence;
+
+		if (next == null)
+			Last = sequence;
+		else
+			next.Previous = sequence;
+
+		if (insert)
+			_insertionTail = sequence;
+
+		return sequence;
 	}
 
-	internal void Insert(QueuedInvocation invocation)
+	internal void Enqueue(CommandSequence sequence, QueuedInvocation invocation)
 	{
 		var index = Allocate(invocation);
-		if (_insertionTail < 0)
+		if (sequence.Tail < 0)
+			sequence.Head = index;
+		else
+			_nodes[sequence.Tail].Next = index;
+		sequence.Tail = index;
+	}
+
+	internal void Insert(CommandSequence sequence, QueuedInvocation invocation)
+	{
+		var index = Allocate(invocation);
+		if (sequence.InsertionTail < 0)
 		{
-			_nodes[index].Next = _head;
-			_head = index;
+			_nodes[index].Next = sequence.Head;
+			sequence.Head = index;
 		}
 		else
 		{
-			_nodes[index].Next = _nodes[_insertionTail].Next;
-			_nodes[_insertionTail].Next = index;
+			_nodes[index].Next = _nodes[sequence.InsertionTail].Next;
+			_nodes[sequence.InsertionTail].Next = index;
 		}
 
-		if (_nodes[index].Next < 0) _tail = index;
-		_insertionTail = index;
+		if (_nodes[index].Next < 0)
+			sequence.Tail = index;
+
+		sequence.InsertionTail = index;
 	}
 
-	// Enqueue from handlers lands after this marker and waits for the next Update.
-	internal int BeginBatch() => Enqueue(default);
+	internal void ResetInsertion() => _insertionTail = null;
 
-	internal void ResetInsertion() => _insertionTail = -1;
-
-	internal QueuedInvocation Dequeue()
+	internal QueuedInvocation Dequeue(CommandSequence sequence)
 	{
-		var index = _head;
+		var index = sequence.Head;
 		var invocation = _nodes[index].Invocation;
-		_head = _nodes[index].Next;
+		sequence.Head = _nodes[index].Next;
 
-		if (_head < 0)
-			_tail = -1;
+		if (sequence.Head < 0)
+			sequence.Tail = -1;
 
-		Release(index);
+		_nodes[index] = new Node { Next = _free };
+		_free = index;
+
 		return invocation;
 	}
 
-	// Callback failure can leave the batch boundary further into the queue.
-	internal void EndBatch(int boundary)
+	internal void Remove(CommandSequence sequence)
 	{
-		if (_head == boundary)
-		{
-			Dequeue();
-			return;
-		}
+		if (sequence.Previous == null)
+			First = sequence.Next;
+		else
+			sequence.Previous.Next = sequence.Next;
 
-		var previous = _head;
-		while (_nodes[previous].Next != boundary)
-			previous = _nodes[previous].Next;
+		if (sequence.Next == null)
+			Last = sequence.Previous;
+		else
+			sequence.Next.Previous = sequence.Previous;
 
-		_nodes[previous].Next = _nodes[boundary].Next;
-		if (_tail == boundary)
-			_tail = previous;
-
-		Release(boundary);
+		sequence.Previous = null;
+		sequence.Next = _freeSequences;
+		sequence.InsertionTail = -1;
+		sequence.WaitUntilFrame = 0;
+		sequence.Suspended = false;
+		sequence.Generation = 0;
+		sequence.ResumeFrame = 0;
+		_freeSequences = sequence;
 	}
 
 	private int Allocate(QueuedInvocation invocation)
@@ -106,11 +140,5 @@ internal sealed class ExecutionQueue(int capacity)
 
 		_nodes[index] = new Node { Invocation = invocation, Next = -1 };
 		return index;
-	}
-
-	private void Release(int index)
-	{
-		_nodes[index] = new Node { Next = _free };
-		_free = index;
 	}
 }

@@ -1,6 +1,6 @@
 # Varcom
 
-Current version: **0.5.0-alpha.1**.
+Current version: **0.6.0-alpha.1**.
 
 A C# command and console variable framework for games, featuring attribute-based
 declarations, source generation, typed handlers, and queued execution.
@@ -113,10 +113,10 @@ handles on the same game thread.
 Reference the Varcom package. It includes the runtime and the source generator.
 
 ```sh
-dotnet add package Varcom --version 0.5.0-alpha.1
+dotnet add package Varcom --version 0.6.0-alpha.1
 ```
 
-Varcom is available on [nuget.org](https://www.nuget.org/packages/Varcom/0.5.0-alpha.1).
+Varcom is available on [nuget.org](https://www.nuget.org/packages/Varcom/).
 For local package builds and publishing, see
 [publishing instructions](https://github.com/UnknownProgers/Varcom/blob/master/docs/publishing.md).
 Declare a partial class with `[CmdModule]` to group your commands.
@@ -246,10 +246,10 @@ construction and producing persistent invocation arrays allocate during preparat
 Insert(CommandInvocation) inserts one call. Insert(ReadOnlySpan<CommandInvocation>) inserts
 a batch in input order; pass an array directly, including batches larger than 100. The span
 is consumed synchronously and never retained. Enqueue has the same tokenized overloads,
-adding calls at the tail. Default CommandInvocation is accepted into the queue and reports InvalidSyntax during
+creating an independent sequence at the tail. Default CommandInvocation is accepted into the queue and reports InvalidSyntax during
 execution through the Update callback; subsequent calls continue. Empty batches are no-ops.
 
-From a handler, Insert runs before the original queue continues in the same Update. Multiple
+From a handler, Insert runs before the original sequence continues in the same Update. Multiple
 Insert calls preserve call order. Nested exec handlers insert before the rest of their caller's
 already-queued commands. Enqueue from handlers still waits for the next Update. A callback
 exception preserves remaining work. There are no source-text continuations in the queue.
@@ -290,11 +290,32 @@ public CommandResult Wait(int frames) => processor.WaitFrames(frames);
 ```
 
 A frame means one call to this processor's Update, not necessarily a rendered frame.
-WaitFrames(1) resumes on the next Update. WaitFrames(2) stops the current batch, skips the
-next Update and resumes on the second subsequent Update. Zero does not pause; negative
-counts return InvalidArguments. WaitFrames may be called during or between updates;
-counting starts with the next Update in either case. Names such as wait are ordinary
-application declarations, not built-ins.
+WaitFrames(1) resumes on the next Update; WaitFrames(2) resumes on the second subsequent
+Update. Zero does not pause; negative counts return InvalidArguments. Names such as wait
+are ordinary application declarations, not built-ins.
+
+Each Enqueue call creates an independent sequence: a string or tokenized span is one
+sequence, while a single tokenized or typed call is a one-command sequence. Empty spans
+create no work. A wait delays only the remaining commands in its sequence. Ready sequences
+execute in submission order, skipping those still waiting. New submissions do not inherit
+another sequence's delay; Enqueue from a handler still first becomes eligible on the next Update.
+
+```csharp
+processor.Enqueue("first; wait 100; second"); // Only second is delayed.
+processor.Enqueue("hello");                   // Runs while the first sequence waits.
+```
+
+Insert during a handler or its completion callback extends the current sequence, before
+its pending tail. Nested exec scripts therefore delay their caller's continuation as well:
+`first; exec config; last` waits before last if config contains a wait. Multiple Insert calls
+inside that handler belong to the same sequence and preserve call order. Outside Update,
+each nonempty Insert call creates an independent sequence before pending work; consecutive
+Insert calls preserve their submission order. To submit a prepared script as one sequence
+outside a handler, use one string or span call, not separate single-call submissions.
+
+WaitFrames and Suspend require a currently executing command or its completion callback;
+outside execution they return ExecutionFailed because there is no current sequence.
+A trailing wait has no continuation to delay and does not affect future submissions.
 
 For conditions such as level readiness, the application owns observation and signaling:
 
@@ -305,24 +326,25 @@ if (result.IsSuccess) pending = token;
 // Return result from the handler.
 
 // Later, after the application observes readiness, on the same game thread:
-processor.Resume(pending); // Returns true only for the active suspension.
-// Execution continues when the host next calls processor.Update().
+processor.Resume(pending); // Returns true only for that active suspension.
+// The continuation becomes eligible on the next processor.Update().
 ```
 
-Check readiness before suspending if the condition may already hold. Suspend may also be
-called outside Update. It returns CommandResult and provides a token only on success.
-Only one wait may be active: another Suspend or WaitFrames returns ExecutionFailed without
-changing the original token or frame count. A failed Suspend outputs a default token. Tokens are tied to
-one processor and generation: default, foreign, stale and duplicate signals return false.
-Resume never executes commands inline. Even Suspend followed by Resume inside the same
-handler ends that batch; remaining commands execute on the next Update. WaitFrames(0) is
-a no-op only when no wait is active; it also fails if an existing wait is active.
+Check readiness before suspending if the condition may already hold. Each sequence may have
+one active wait; conflicting Suspend or WaitFrames requests return ExecutionFailed without
+replacing it. Different sequences can wait independently, including separate external signals.
+A failed Suspend outputs a default token. Default, foreign, stale and duplicate signals return
+false; completing a sequence invalidates its token even when its storage is reused.
+Resume never executes inline or later in the same Update that delivered the signal.
+Even Suspend followed by Resume inside the same handler defers its continuation until the
+next Update. WaitFrames(0) is a no-op only when the current sequence has no active wait.
 
-Both modes pause the entire queue. Enqueue and Insert keep accepting calls; inserted calls
-still precede the remainder. Callback results include the wait command itself, with no extra
-results during skipped updates. Callback exceptions preserve waits and remaining calls.
-Scheduling is a side effect: a later handler error does not undo an earlier wait request.
-Nested exec scripts and newly available registrations work normally after resumption.
+Results include the wait command itself, with no extra callbacks for waiting sequences.
+Callback exceptions preserve remaining work and waits; elapsed frames still count on every
+Update even if another sequence's callback throws. Scheduling is a side effect: a later
+handler error does not undo an earlier wait request. Registrations are resolved only when
+the continuation actually executes. Completed sequence storage and command nodes are reused;
+new concurrency peaks may allocate, while warmed execution remains allocation-free.
 
 The application watches conditions and transfers background notifications to its game thread.
 Varcom stores no predicates, event subscriptions, Task or timers. Replays schedule calls in

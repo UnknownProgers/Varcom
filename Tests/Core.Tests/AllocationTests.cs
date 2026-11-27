@@ -20,22 +20,25 @@ public sealed class AllocationTests
 			calls++;
 			return CommandResult.Ok();
 		});
-		var tokenizer = new CommandTokenizer("ping");
-		tokenizer.TryRead(out var command, out _);
+		CommandSuspension token = default;
+		using var ready = registry.RegisterMethod(new("ready", "", Array.Empty<CommandParameter>()), _ => processor.Suspend(out token));
+		var tokenizer = new CommandTokenizer("ready; ping");
+		tokenizer.TryRead(out var first, out _);
+		tokenizer.TryRead(out var second, out _);
+		var commands = new[] { first, second };
 		for (var i = 0; i < 1000; i++)
 		{
-			processor.Suspend(out var token);
-			processor.Enqueue(command);
+			processor.Enqueue(commands);
 			processor.Update();
-			processor.Resume(token);
+			Assert.Equal(i, calls);
+			Assert.True(processor.Resume(token));
 			processor.Update();
 		}
 
 		var before = GC.GetAllocatedBytesForCurrentThread();
 		for (var i = 0; i < 10000; i++)
 		{
-			processor.Suspend(out var token);
-			processor.Enqueue(command);
+			processor.Enqueue(commands);
 			processor.Update();
 			processor.Resume(token);
 			processor.Update();
@@ -77,6 +80,40 @@ public sealed class AllocationTests
 
 		var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 		Assert.Equal(11000, calls);
+		Assert.Equal(0L, allocated);
+	}
+
+	[Fact]
+	public void TenIndependentFrameWaitsDoNotAllocateAfterWarmup()
+	{
+		var registry = new CommandRegistry();
+		var processor = new CommandProcessor(registry);
+		var calls = 0;
+		using var wait = registry.RegisterMethod(new("wait", "", Array.Empty<CommandParameter>()), _ => processor.WaitFrames(2));
+		using var ping = registry.RegisterMethod(new("ping", "", Array.Empty<CommandParameter>()), _ =>
+		{
+			calls++;
+			return CommandResult.Ok();
+		});
+		for (var i = 0; i < 1000; i++)
+		{
+			for (var j = 0; j < 10; j++) processor.Enqueue("wait; ping");
+			processor.Update();
+			processor.Update();
+			processor.Update();
+		}
+
+		var before = GC.GetAllocatedBytesForCurrentThread();
+		for (var i = 0; i < 1000; i++)
+		{
+			for (var j = 0; j < 10; j++) processor.Enqueue("wait; ping");
+			processor.Update();
+			processor.Update();
+			processor.Update();
+		}
+
+		var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+		Assert.Equal(20000, calls);
 		Assert.Equal(0L, allocated);
 	}
 

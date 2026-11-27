@@ -8,7 +8,7 @@ using Varcom.Processing;
 
 namespace Varcom;
 
-/// <summary>A synchronous FIFO processor. All operations belong to the host's game thread.</summary>
+/// <summary>A synchronous processor of independently waiting FIFO sequences. All operations belong to the host's game thread.</summary>
 public sealed class CommandProcessor(CommandRegistry registry, int initialCapacity = 128)
 {
 	private readonly CommandRegistry _registry = registry ?? throw new ArgumentNullException(nameof(registry));
@@ -18,22 +18,26 @@ public sealed class CommandProcessor(CommandRegistry registry, int initialCapaci
 	private readonly Dictionary<Type, ICommandBuffer> _commandBuffers = new();
 
 	private bool _updating;
-	private bool _stopBatch;
-	private bool _suspended;
-	private long _remainingFrames;
+	private bool _stopSequence;
+	private CommandSequence? _currentSequence;
+	private ulong _frame;
 	private ulong _suspensionGeneration;
 
-	/// <summary>Inserts an immutable tokenized call before pending work. Registration is resolved at execution.</summary>
+	/// <summary>Extends the current sequence, or creates an independent sequence before pending work outside Update.</summary>
 	public void Insert(CommandInvocation command)
 	{
-		_executionQueue.Insert(QueuedInvocation.FromText(command));
+		_executionQueue.Insert(_currentSequence ?? _executionQueue.CreateSequence(insert: true), QueuedInvocation.FromText(command));
 	}
 
 	/// <summary>Inserts a batch in input order. The span is consumed synchronously and is never retained.</summary>
 	public void Insert(ReadOnlySpan<CommandInvocation> commands)
 	{
+		if (commands.IsEmpty)
+			return;
+
+		var sequence = _currentSequence ?? _executionQueue.CreateSequence(insert: true);
 		foreach (var command in commands)
-			_executionQueue.Insert(QueuedInvocation.FromText(command));
+			_executionQueue.Insert(sequence, QueuedInvocation.FromText(command));
 	}
 
 	/// <summary>Convenience text insertion. Only syntax is checked now; lookup and arguments are checked during Update.</summary>
@@ -43,8 +47,9 @@ public sealed class CommandProcessor(CommandRegistry registry, int initialCapaci
 		if (!prepared.Result.IsSuccess)
 			return prepared.Result;
 
+		var sequence = _currentSequence ?? _executionQueue.CreateSequence(insert: true);
 		while (prepared.TryDequeue(out var command))
-			_executionQueue.Insert(command);
+			_executionQueue.Insert(sequence, command);
 
 		return CommandResult.Ok();
 	}
@@ -56,112 +61,152 @@ public sealed class CommandProcessor(CommandRegistry registry, int initialCapaci
 		if (!prepared.Result.IsSuccess)
 			return prepared.Result;
 
+		var sequence = _executionQueue.CreateSequence();
 		while (prepared.TryDequeue(out var command))
-			_executionQueue.Enqueue(command);
+			_executionQueue.Enqueue(sequence, command);
 
 		return CommandResult.Ok();
 	}
 
-	/// <summary>Queues a tokenized call for late resolution.</summary>
+	/// <summary>Creates a one-call sequence for late resolution.</summary>
 	public void Enqueue(CommandInvocation command)
 	{
-		_executionQueue.Enqueue(QueuedInvocation.FromText(command));
+		_executionQueue.Enqueue(_executionQueue.CreateSequence(), QueuedInvocation.FromText(command));
 	}
 
-	/// <summary>Queues tokenized calls in input order.</summary>
+	/// <summary>Creates one independent sequence of tokenized calls in input order.</summary>
 	public void Enqueue(ReadOnlySpan<CommandInvocation> commands)
 	{
+		if (commands.IsEmpty)
+			return;
+
+		var sequence = _executionQueue.CreateSequence();
 		foreach (var command in commands)
-			_executionQueue.Enqueue(QueuedInvocation.FromText(command));
+			_executionQueue.Enqueue(sequence, QueuedInvocation.FromText(command));
 	}
 
-	/// <summary>Queues typed data. Success means accepted, not executed.</summary>
+	/// <summary>Creates a one-call typed sequence. Success means accepted, not executed.</summary>
 	public CommandResult Enqueue<TCommand>(in TCommand command) where TCommand : struct, ICommand
 	{
 		var buffer = GetOrCreateBuffer<TCommand>();
 		buffer.Add(in command);
-		_executionQueue.Enqueue(QueuedInvocation.FromTyped(buffer));
+		_executionQueue.Enqueue(_executionQueue.CreateSequence(), QueuedInvocation.FromTyped(buffer));
 		return CommandResult.Ok();
 	}
 
-	/// <summary>Resumes on the Nth subsequent Update. Zero does not pause; frames mean processor updates.</summary>
+	/// <summary>Delays the current sequence until the Nth subsequent Update. Requires an executing command or callback.</summary>
 	public CommandResult WaitFrames(long frames)
 	{
 		if (frames < 0)
 			return CommandResult.Fail(CommandErrorCode.InvalidArguments, "Invalid frame delay.");
 
-		if (_suspended || _remainingFrames > 0)
-			return CommandResult.Fail(CommandErrorCode.ExecutionFailed, "The processor is already waiting.");
+		var sequence = _currentSequence;
+		if (sequence == null)
+			return CommandResult.Fail(CommandErrorCode.ExecutionFailed, "No active command sequence.");
+
+		if (sequence.Suspended || sequence.WaitUntilFrame > _frame)
+			return CommandResult.Fail(CommandErrorCode.ExecutionFailed, "The sequence is already waiting.");
 
 		if (frames == 0)
 			return CommandResult.Ok();
 
-		_remainingFrames = frames;
-		_stopBatch = true;
+		sequence.WaitUntilFrame = _frame + (ulong)frames;
+		_stopSequence = true;
 
 		return CommandResult.Ok();
 	}
 
-	/// <summary>Starts one external wait, or returns failure if already waiting. Failed requests output a default token.</summary>
+	/// <summary>Suspends the current sequence, leaving independently submitted sequences runnable.</summary>
 	public CommandResult Suspend(out CommandSuspension suspension)
 	{
 		suspension = default;
-		if (_suspended || _remainingFrames > 0)
-			return CommandResult.Fail(CommandErrorCode.ExecutionFailed, "The processor is already waiting.");
+		var sequence = _currentSequence;
+		if (sequence == null)
+			return CommandResult.Fail(CommandErrorCode.ExecutionFailed, "No active command sequence.");
+
+		if (sequence.Suspended || sequence.WaitUntilFrame > _frame)
+			return CommandResult.Fail(CommandErrorCode.ExecutionFailed, "The sequence is already waiting.");
 
 		_suspensionGeneration = unchecked(_suspensionGeneration + 1);
-		_suspended = true;
-		_stopBatch = true;
+		sequence.Generation = _suspensionGeneration;
+		sequence.Suspended = true;
+		_stopSequence = true;
 
-		suspension = new CommandSuspension(this, _suspensionGeneration);
+		suspension = new CommandSuspension(this, sequence, sequence.Generation);
 		return CommandResult.Ok();
 	}
 
-	/// <summary>Accepts only the active suspension's signal. Execution continues on a subsequent Update, never inline.</summary>
+	/// <summary>Signals one sequence. Its continuation runs on a subsequent Update, never inline.</summary>
 	public bool Resume(CommandSuspension suspension)
 	{
-		if (!_suspended || suspension.Owner != this || suspension.Generation != _suspensionGeneration)
+		var sequence = suspension.Sequence;
+		if (suspension.Owner != this
+		    || sequence == null
+		    || !sequence.Suspended
+		    || sequence.Generation != suspension.Generation)
 			return false;
 
-		_suspended = false;
+		sequence.Suspended = false;
+		sequence.ResumeFrame = _frame + 1;
 		return true;
 	}
 
 	/// <summary>
-	/// Processes the current batch unless paused. Each call advances a frame wait by one frame.
-	/// Results are delivered before stopping. Callback exceptions preserve remaining work and waits.
+	/// Advances one frame and executes ready sequences in submission order. Handler Enqueue calls wait for the next Update.
+	/// Callback exceptions preserve pending work and waits. Insert extends the current sequence.
 	/// </summary>
 	public void Update(Action<CommandResult>? onCompleted = null)
 	{
 		if (_updating)
 			throw new InvalidOperationException("Reentrant Update is not supported.");
 
-		if (_suspended)
-			return;
-
-		if (_remainingFrames > 0 && --_remainingFrames > 0)
-			return;
-
-		_stopBatch = false;
-
-		var boundary = _executionQueue.BeginBatch();
+		_frame++;
+		var boundary = _executionQueue.Last;
+		var sequence = _executionQueue.First;
+		_executionQueue.ResetInsertion();
 		_updating = true;
+
 		try
 		{
-			while (_executionQueue.First != boundary && !_stopBatch)
+			while (sequence != null)
 			{
-				var invocation = _executionQueue.Dequeue();
-				_executionQueue.ResetInsertion();
-				var result = Execute(invocation);
-				onCompleted?.Invoke(result);
+				var last = sequence == boundary;
+				var next = sequence.Next;
+				if (!sequence.Suspended && sequence.ResumeFrame <= _frame && sequence.WaitUntilFrame <= _frame)
+				{
+					_currentSequence = sequence;
+					_stopSequence = false;
+					while (sequence.Head >= 0 && !_stopSequence)
+					{
+						var invocation = _executionQueue.Dequeue(sequence);
+						sequence.InsertionTail = -1;
+						var result = Execute(invocation);
+						onCompleted?.Invoke(result);
+					}
+
+					EndSequence();
+				}
+
+				if (last)
+					break;
+
+				sequence = next;
 			}
 		}
 		finally
 		{
-			_executionQueue.EndBatch(boundary);
+			EndSequence();
 			_executionQueue.ResetInsertion();
 			_updating = false;
 		}
+	}
+
+	private void EndSequence()
+	{
+		var sequence = _currentSequence;
+		_currentSequence = null;
+		if (sequence != null && sequence.Head < 0)
+			_executionQueue.Remove(sequence);
 	}
 
 	private TypedCommandBuffer<TCommand> GetOrCreateBuffer<TCommand>() where TCommand : struct, ICommand
