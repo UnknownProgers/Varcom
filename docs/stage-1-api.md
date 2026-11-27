@@ -100,7 +100,7 @@ Groups carry no lifetime enum: the application chooses their composition and act
 
 Dispose is idempotent and removes registrations in reverse order. It never disposes owners.
 Constructor failure rolls back previously registered members and owners. Queued calls retain
-binding identity, so disposing/replacing a module cannot redirect old calls to new objects.
+names/types resolved at execution, so a replacement module receives pending calls.
 The generated module stores only its disposable registration group and clears it on Dispose.
 
 Modules are concrete non-generic top-level partial classes without custom instance
@@ -116,12 +116,12 @@ callback, engine dependency or container dependency is introduced.
 
 ## Text boundary
 
-Enqueue(string) accepts one or more invocations separated by semicolons outside quotes.
+Both string overloads accept invocations separated by physical newlines and semicolons outside quotes.
 Tokenization and statement boundaries are handled internally in a single scan. There is
-no public Split helper and the caller never needs to split commands manually.
+also a public CommandTokenizer for applications that load scripts and insert calls individually.
 
-The complete input is parsed before any of its invocations are enqueued. A syntax,
-argument or lookup error rejects this submission without queueing a valid prefix;
+The complete input is parsed before any of its invocations are enqueued. A syntax
+error rejects this submission without queueing a valid prefix;
 previously queued calls remain unchanged. Execution failures are individual results, not
 transaction rollback. Command factories/constructors run during Update, immediately before
 the handler. Constructor failures are execution failures, not enqueue failures.
@@ -129,7 +129,7 @@ the handler. Constructor failures are execution failures, not enqueue failures.
 Empty segments between separators are ignored; input containing no commands is rejected.
 Whitespace separates arguments; quoted empty strings are preserved. Within quotes,
 backslash escapes quote/backslash; other backslashes remain literal. Newlines are
-whitespace, not separators. Comments/files are host concerns.
+command separators for both string overloads. Comments/files are host concerns.
 
 Names use ASCII letters, digits, underscore or dot, begin with a letter, and may have a
 leading +/-. Lookup is ordinal case-insensitive. No automatic +/- generation is performed.
@@ -138,7 +138,7 @@ Supported argument/variable values: CmdString, bool, int, float, double, enum. B
 non-finite floats and
 undefined enum values are rejected.
 Numeric parsing/formatting use invariant culture. Missing required, malformed and extra
-arguments reject the submission. Defaults apply only to explicitly optional parameters.
+arguments fail the individual invocation during execution. Defaults apply only to explicitly optional parameters.
 Command construction does not happen while accepting text. Recheck binding activity after
 construction so a constructor cannot redirect its command to a replacement registration.
 Typed submissions skip parsing, so domain checks belong to handlers and setters.
@@ -160,8 +160,8 @@ a typed CommandValue. Use Get<T> for data or TryFormat for invariant text in cal
 space; ToString explicitly materializes a string. ReadVariable is immediate and does not
 construct a command.
 
-Disposal invalidates queued calls via binding identity. They cannot execute on a replacement
-handler with the same type/name. Released bindings clear their owner delegates; externally
+Queued text and typed calls resolve current registrations at execution by name and type.
+Disposal removes availability; a replacement handler receives pending calls. Released bindings clear their owner delegates; externally
 supplied payloads must avoid retaining game owners if that is unwanted. Varcom does not roll
 back game side effects if an invocation throws. Services and their disposal belong to the host.
 
@@ -182,7 +182,7 @@ network replication, configuration persistence, custom parsers, GUI and package 
 
 ## Allocation scope
 
-Queued entries are structs inside Queue, not individual heap objects. Successful Enqueue
+Queued entries are structs inside an array-backed linked queue, not individual heap objects. Successful Enqueue
 and handler results are structs. Empty Update and result dispatch do not allocate arrays
 or wrappers. Each processor lazily owns a Queue<T> per concrete typed command. Global
 pending entries reference that queue without boxing the command. The shared registry holds
@@ -208,35 +208,44 @@ expected diagnostics use static or registration-time strings. Messages identify 
 parameter and expected type without interpolating the received value on each rejection.
 Dynamic user messages and exceptions can allocate. Varcom stores no result histories.
 
-A disposed typed call still dequeues its data and reports Unavailable; this keeps the
+A typed call with no current registration still dequeues its data and reports Unavailable; this keeps the
 remaining payloads aligned after re-registration. Typed queues contain no handler references;
 registration disposal clears handler/delegate references in the binding.
 
-## Architecture stage: explicit definitions and invocations
+## Tokenized invocations and execution
 
-Responsibilities after the allocation stage:
+CommandTokenizer exposes independent lexical parsing without a registry. TryRead returns
+immutable CommandInvocation values with CmdString name/argument tokens, or a syntax error
+with recovery at the next physical line. Optional separateLines: false preserves the original
+newline-as-whitespace grammar. It allocates persistent token arrays for public invocations.
 
-- CommandRegistry owns name/type lookup, metadata snapshots and registration handles.
-- CommandBinding owns definition lifetime through IsActive and Deactivate. Typed command,
-  method and variable bindings each own only their own factory/handler/accessors.
-- CommandLineParser validates text into a reusable processor-owned staging list. It never schedules work.
-- CommandProcessor owns all buffers, global execution order, batching and result delivery.
-- QueuedInvocation has explicit typed-buffer and text-argument alternatives; it no longer
-  guesses the invocation kind by testing an object for a private queue interface.
+String overloads delegate to CommandTextPreparer, which owns reusable tokenization/staging
+storage and rents token arrays for pending calls. PreparedTextCommands is a synchronous
+lease that returns only rentals not transferred to the queue. Accepted calls return their
+arrays cleared after execution. The processor has no scanner, token staging or rental logic. Syntax failure rejects the
+whole submission and releases staged tokens. Unknown names and invalid argument values are
+accepted, then fail individually during Update. CommandArguments reads existing tokens;
+there is no execution-time lexical scan or source continuation in the queue.
 
-Bindings have no reference to CommandProcessor or its queues. Processor-owned typed buffers
-call the matching typed binding; disposal invalidates old calls and clears owner references.
-Variable capability is explicit through an internal IVariableBinding, separate from activity.
+Insert and Enqueue both accept one CommandInvocation or ReadOnlySpan<CommandInvocation>.
+The span is consumed synchronously; immutable calls can be reused. Default calls are queued
+and report InvalidSyntax during execution, without stopping subsequent calls. Insert(string) remains an atomic-syntax
+convenience overload. Both string overloads use physical newline separators and reject empty text.
+For recoverable script syntax errors, hosts use CommandTokenizer and insert valid calls
+one by one, reporting syntax failures themselves. Varcom has no special exec name or loader.
 
-Text invocations retain source ranges and parser metadata, not boxed command structs or
-object arrays. Validation parses scalar arguments on the first lexical pass before acceptance; generated bindings
-read them again during execution and construct commands on the stack. This trades a second
-scalar parse for simple ownership without payload pools. Throughput still needs benchmarking.
-Generated parameter metadata supplies closed generic parsers. Manual enum metadata without
-these generated parsers uses registration-time reflection to construct its generic parser;
-there is no reflection in the warmed enqueue/execute path.
+One execution queue holds text tokens or references to processor-owned typed payload queues.
+Neither alternative retains a registration. Execution resolves text by name and typed data by
+command type, validates text arguments against that current binding, then executes it. A
+replacement receives pending calls; a constructor that disposes the already-resolved binding
+still cannot redirect its in-flight invocation to another handler.
 
-exec and wait remain deferred features.
+Insertion links nodes before pending work without shifting entries. A batch boundary keeps
+Enqueue calls made by handlers on the next Update. Multiple inserts preserve call order;
+nested exec handlers insert before their caller's remainder. Callback failures preserve work.
+Bindings have no reference to processor queues. Numeric parsing remains at validation and
+argument access, but tokenization occurs only at acceptance. Reflection is limited to setup
+for manually declared enum parameter metadata. No wait or per-update budget is introduced.
 
 ## Test organization
 

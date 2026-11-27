@@ -44,13 +44,22 @@ public sealed class GeneratedAllocationTests
 		using var commands = registry.Register(new GeneratedHandler());
 		using var variables = registry.Register(new GeneratedOwner());
 		var processor = new CommandProcessor(registry);
-		for (var i = 0; i < 1000; i++) processor.Enqueue(text);
 		var matches = 0;
+		Action<CommandResult> callback = result =>
+		{
+			if (result.Error.Code == code) matches++;
+		};
+		for (var i = 0; i < 1000; i++)
+		{
+			processor.Enqueue(text);
+			processor.Update();
+		}
+
 		var before = GC.GetAllocatedBytesForCurrentThread();
 		for (var i = 0; i < 10000; i++)
 		{
 			if (processor.Enqueue(text).Error.Code == code) matches++;
-			processor.Update();
+			processor.Update(callback);
 		}
 
 		var allocated = GC.GetAllocatedBytesForCurrentThread() - before;

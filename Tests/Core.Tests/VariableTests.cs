@@ -18,8 +18,9 @@ public sealed class VariableTests
 				return CommandResult.Ok();
 			});
 		var processor = new CommandProcessor(registry);
-		Assert.False(processor.Enqueue("gravity abc").IsSuccess);
-		Assert.False(processor.Enqueue("gravity NaN").IsSuccess);
+		Assert.True(processor.Enqueue("gravity abc").IsSuccess);
+		Assert.True(processor.Enqueue("gravity NaN").IsSuccess);
+		Assert.All(Collect(processor), r => Assert.Equal(CommandErrorCode.InvalidArguments, r.Error.Code));
 		Assert.Equal(800, gravity);
 		processor.Enqueue("gravity 600");
 		processor.Enqueue("gravity");
@@ -32,7 +33,8 @@ public sealed class VariableTests
 		Assert.Equal(600f, registry.ReadVariable("gravity").Value.Get<float>());
 		using var ro = registry.RegisterVariable(new VariableInfo("profile", "Profile", typeof(CmdString), true),
 			() => new CmdString("default"));
-		Assert.Equal(CommandErrorCode.ReadOnly, processor.Enqueue("profile other").Error.Code);
+		Assert.True(processor.Enqueue("profile other").IsSuccess);
+		Assert.Equal(CommandErrorCode.ReadOnly, Collect(processor)[0].Error.Code);
 	}
 
 	[Fact]
@@ -70,8 +72,9 @@ public sealed class VariableTests
 			return CommandResult.Ok();
 		});
 		var processor = new CommandProcessor(registry);
-		Assert.False(processor.Enqueue("enabled garbage").IsSuccess);
-		Assert.False(processor.Enqueue("mode 99").IsSuccess);
+		Assert.True(processor.Enqueue("enabled garbage").IsSuccess);
+		Assert.True(processor.Enqueue("mode 99").IsSuccess);
+		Assert.All(Collect(processor), r => Assert.Equal(CommandErrorCode.InvalidArguments, r.Error.Code));
 		processor.Enqueue("enabled 0");
 		processor.Enqueue("mode two");
 		processor.Update();
@@ -93,7 +96,8 @@ public sealed class VariableTests
 			});
 		registry.GetEntries();
 		Assert.Equal(0, calls);
-		Assert.Equal(CommandErrorCode.ReadOnly, processor.Enqueue("profile changed").Error.Code);
+		Assert.True(processor.Enqueue("profile changed").IsSuccess);
+		Assert.Equal(CommandErrorCode.ReadOnly, Collect(processor)[0].Error.Code);
 		Assert.True(processor.Enqueue("profile").IsSuccess);
 		Assert.Equal(0, calls);
 		var result = Collect(processor)[0];

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.0-alpha.1 — 2026-11-27
+
+- Add public CommandTokenizer and immutable CommandInvocation for registry-independent text preparation.
+- Add single-call and ReadOnlySpan batch insertion and enqueueing, preserving call order.
+- Use one execution queue; inserted commands run before the remainder in the current Update.
+- Resolve text registrations and typed handlers at execution, allowing level loading and replacement before pending calls run.
+- Delegate string preparation and pooled token ownership to a separate component; preserve warmed zero-allocation paths.
+- Report empty tokenized calls as InvalidSyntax during execution and continue with subsequent calls.
+
+Breaking behavior: command lookup and argument errors are now execution results rather than enqueue failures.
+Pending calls use the current registration, including replacements. Both string overloads treat physical
+newlines as separators and reject empty input. Syntax errors still reject a whole string submission atomically.
+The application supplies exec loading and syntax-error reporting; wait remains deferred.
+
 ## 0.3.0-alpha.1 — 2026-11-26
 
 - Store optional declaration metadata and active registrations in independent registry catalogs.

@@ -1,6 +1,6 @@
 # Varcom
 
-Current version: **0.3.0-alpha.1**.
+Current version: **0.4.0-alpha.1**.
 
 A C# command and console variable framework for games, featuring attribute-based
 declarations, source generation, typed handlers, and queued execution.
@@ -98,12 +98,14 @@ Varcom has no special rules for either.
 A handler may outlive its registration and be registered again later. Conversely, leaving
 an old registration active keeps its handler reachable and its commands available, even if
 the game has otherwise finished with that level. Removing a registration does not undo
-completed actions. Calls already queued against it fail as unavailable when processed;
-they are not redirected to a newly registered handler with the same command name.
+completed actions. Queued calls resolve the current registration when executed, by console
+name for text and command type for typed calls. A replacement receives pending calls. Without
+a current registration, text calls report UnknownCommand and typed calls report Unavailable.
 
 The processor does not run the game loop or own the game simulation. Your game calls
 `Update()` where command execution belongs. Calls are processed in queue order; calls added
-during an update wait for the next update. Use the registry, processor and registration
+through Enqueue during an update wait for the next update; Insert runs before the pending remainder. Use the registry, processor and
+registration
 handles on the same game thread.
 
 ## Quick start
@@ -201,10 +203,73 @@ A single submission can contain a command sequence:
 processor.Enqueue("give medkit 2; capacity 20");
 ```
 
-Semicolons inside quotes are preserved. A parsing error rejects the whole sequence before
-it enters the queue; existing queued work is untouched. Command construction is deferred
+Semicolons inside quotes are preserved. A syntax error rejects the whole sequence before
+it enters the queue; existing queued work is untouched. Unknown commands and invalid arguments
+are accepted, then reported independently during Update. Command construction is deferred
 until Update, so constructor exceptions are execution failures. Commands produced by handlers
 still wait for the next Update. Execution failures do not roll back prior game actions.
+
+## Tokenization, enqueueing and insertion
+
+Text calls are tokenized before entering the queue. No registration or parameter schema is
+retained: both Enqueue and Insert look up the active registration and validate arguments when
+executed. A `load; give medkit 2` sequence can therefore activate a level's module in load
+before resolving give. Typed Enqueue stores struct data and also resolves its handler during
+Update. Within a running invocation its resolved binding stays fixed, including a recheck
+after command construction if a constructor disposes that binding.
+
+Use CommandTokenizer in application code to read an immutable CommandInvocation at a time:
+
+```csharp
+var tokenizer = new CommandTokenizer(scriptText);
+while (tokenizer.TryRead(out var command, out var result))
+{
+    if (result.IsSuccess) processor.Insert(command);
+    else ReportError(result.Error); // Application-owned output.
+}
+```
+
+TryRead returns false at end; true can carry a syntax failure, which the host reports before
+continuing. It never consults the registry. CommandInvocation exposes Name, ArgumentCount
+and GetArgument(index) as CmdString views. It owns immutable token storage and remains valid
+after reading further, executing, or reusing the invocation on another processor. Tokenizer
+construction and producing persistent invocation arrays allocate during preparation.
+
+Insert(CommandInvocation) inserts one call. Insert(ReadOnlySpan<CommandInvocation>) inserts
+a batch in input order; pass an array directly, including batches larger than 100. The span
+is consumed synchronously and never retained. Enqueue has the same tokenized overloads,
+adding calls at the tail. Default CommandInvocation is accepted into the queue and reports InvalidSyntax during
+execution through the Update callback; subsequent calls continue. Empty batches are no-ops.
+
+From a handler, Insert runs before the original queue continues in the same Update. Multiple
+Insert calls preserve call order. Nested exec handlers insert before the rest of their caller's
+already-queued commands. Enqueue from handlers still waits for the next Update. A callback
+exception preserves remaining work. There are no source-text continuations in the queue.
+
+A host-defined exec loads text, tokenizes it and inserts calls using the loop above. Loading,
+command naming, syntax-error reporting and read errors belong to the host. Its success means
+calls were inserted; execution results arrive individually through the Update callback.
+
+The convenience Insert(string) tokenizes the whole supplied text atomically before insertion;
+it returns a syntax error without adding any prefix. Unlike the tokenizer loop, it cannot
+accept the rest of a script containing malformed quotes. Both string overloads reject empty
+input and use the same preparation component and grammar. Neither
+checks command availability or argument values at acceptance.
+
+CommandTokenizer defaults to physical newline separators as well as unquoted semicolons;
+malformed quotes recover at the next line. Quoted semicolons and quote/backslash escaping
+are preserved. Both string overloads use these default rules, including physical newline
+separators. For newline-as-whitespace parsing use CommandTokenizer(separateLines: false)
+and pass the resulting invocations to either method. Null text throws.
+
+A separate text-preparation component owns scanning, staging and rentals. String overloads
+only place prepared calls in the queue. Disposing preparation returns untransferred rentals;
+accepted calls retain ownership until execution, including across subsequent preparations.
+Warmed convenience text enqueue/insertion reuses rented token arrays, returning and clearing
+them after execution. Prepared invocations can also be queued repeatedly without allocations
+within queue capacity. Initial rentals, public tokenization, loading text and buffer growth
+can allocate. CmdString results retain immutable source strings rather than rented arrays.
+No per-update budget, wait implementation or recursion limit is introduced.
 
 ## Declarations and available commands
 

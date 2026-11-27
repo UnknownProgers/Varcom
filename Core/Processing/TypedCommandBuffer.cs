@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using Varcom.Bindings;
 using Varcom.Contracts;
 
 namespace Varcom.Processing;
@@ -11,10 +10,12 @@ internal sealed class TypedCommandBuffer<TCommand>(int initialCapacity) : IComma
 
 	internal void Add(in TCommand command) => _commands.Enqueue(command);
 
-	public CommandResult ExecuteNext(CommandBinding binding)
+	public CommandResult ExecuteNext(CommandRegistry registry)
 	{
-		// Always consume the payload, including calls invalidated by registration disposal.
+		// Consume the payload even when no handler is currently available.
 		var command = _commands.Dequeue();
-		return ((TypedCommandBinding<TCommand>)binding).Handle(in command);
+		return registry.TryGet<TCommand>(out var binding)
+			? binding.Handle(in command)
+			: CommandResult.Fail(CommandErrorCode.Unavailable, "No handler for command type.");
 	}
 }

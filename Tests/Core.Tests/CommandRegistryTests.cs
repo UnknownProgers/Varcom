@@ -26,7 +26,7 @@ public sealed class CommandRegistryTests
 	}
 
 	[Fact]
-	public void Dispose_InvalidatesOldCallsWithoutRemovingReplacement()
+	public void PendingTypedCallsUseReplacement()
 	{
 		var registry = new CommandRegistry();
 		var calls = 0;
@@ -46,12 +46,12 @@ public sealed class CommandRegistryTests
 				calls++;
 				return CommandResult.Ok();
 			}));
-		Assert.Equal(CommandErrorCode.Unavailable, Collect(processor)[0].Error.Code);
-		Assert.Equal(0, calls);
+		Assert.True(Collect(processor)[0].IsSuccess);
+		Assert.Equal(1, calls);
 		Assert.Throws<ArgumentException>(() => registry.Register(Info(), a => new Add(), new Handler(_ => CommandResult.Ok())));
 		processor.Enqueue(new Add(1));
 		processor.Update();
-		Assert.Equal(1, calls);
+		Assert.Equal(2, calls);
 	}
 
 	[Fact]
@@ -65,7 +65,8 @@ public sealed class CommandRegistryTests
 		Assert.Single(registry.GetEntries());
 		var processor = new CommandProcessor(registry);
 		Assert.True(processor.Enqueue("taken").IsSuccess);
-		Assert.False(processor.Enqueue("new").IsSuccess);
+		Assert.True(processor.Enqueue("new").IsSuccess);
+		Assert.Equal(CommandErrorCode.UnknownCommand, Collect(processor)[1].Error.Code);
 	}
 
 	[Fact]
@@ -75,7 +76,9 @@ public sealed class CommandRegistryTests
 		var parameters = new[] { new CommandParameter("value", typeof(int)) };
 		using var registration = registry.RegisterMethod(new("test", "", parameters), _ => CommandResult.Ok());
 		parameters[0] = new("value", typeof(CmdString));
-		Assert.False(new CommandProcessor(registry).Enqueue("test invalid").IsSuccess);
+		var processor = new CommandProcessor(registry);
+		Assert.True(processor.Enqueue("test invalid").IsSuccess);
+		Assert.Equal(CommandErrorCode.InvalidArguments, Collect(processor)[0].Error.Code);
 	}
 
 	[Fact]
@@ -97,9 +100,8 @@ public sealed class CommandRegistryTests
 		processor.Enqueue(new Add(2));
 		processor.Enqueue("add 3");
 		var results = Collect(processor);
-		Assert.False(results[0].IsSuccess);
-		Assert.Equal(CommandErrorCode.Unavailable, results[0].Error.Code);
-		Assert.Equal(new[] { 1, 2, 3 }, seen);
+		Assert.True(results[0].IsSuccess);
+		Assert.Equal(new[] { 99, 1, 2, 3 }, seen);
 	}
 
 	[Fact]

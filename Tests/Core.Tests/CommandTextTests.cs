@@ -15,7 +15,7 @@ public sealed class CommandTextTests
 	[InlineData("pair bad \"unfinished", CommandErrorCode.InvalidSyntax, "Unterminated quoted string.", null)]
 	[InlineData("readonly bad extra", CommandErrorCode.ReadOnly, "Variable 'readonly' is read-only.", null)]
 	[InlineData("readonly bad \"unfinished", CommandErrorCode.InvalidSyntax, "Unterminated quoted string.", null)]
-	public void Enqueue_PreservesDiagnosticPriorityAndRejectsTheWholeSequence(string text, CommandErrorCode code,
+	public void EnqueueRejectsSyntaxButDefersArgumentDiagnostics(string text, CommandErrorCode code,
 		string message, string? argumentName)
 	{
 		var registry = new CommandRegistry();
@@ -33,13 +33,22 @@ public sealed class CommandTextTests
 		Assert.True(processor.Enqueue("pair 1 2").IsSuccess);
 
 		var result = processor.Enqueue("pair 1 2; " + text);
-
-		Assert.False(result.IsSuccess);
-		Assert.Equal(code, result.Error.Code);
-		Assert.Equal(message, result.Error.Message);
-		Assert.Equal(argumentName, result.Error.ArgumentName);
-		processor.Update();
-		Assert.Equal(1, calls);
+		if (code == CommandErrorCode.InvalidSyntax)
+		{
+			Assert.Equal(code, result.Error.Code);
+			Assert.Equal(message, result.Error.Message);
+			processor.Update();
+			Assert.Equal(1, calls);
+		}
+		else
+		{
+			Assert.True(result.IsSuccess);
+			var results = Collect(processor);
+			Assert.Equal(code, results[2].Error.Code);
+			Assert.Equal(message, results[2].Error.Message);
+			Assert.Equal(argumentName, results[2].Error.ArgumentName);
+			Assert.Equal(2, calls);
+		}
 	}
 
 	[Theory]
@@ -87,7 +96,8 @@ public sealed class CommandTextTests
 		Assert.Equal(0, value);
 		processor.Update();
 		Assert.Equal(7, value);
-		Assert.False(processor.Enqueue("missing").IsSuccess);
+		Assert.True(processor.Enqueue("missing").IsSuccess);
+		Assert.Equal(CommandErrorCode.UnknownCommand, Collect(processor)[0].Error.Code);
 	}
 
 	[Theory]
@@ -95,7 +105,7 @@ public sealed class CommandTextTests
 	[InlineData("add nope")]
 	[InlineData("add 1 2 3")]
 	[InlineData("add 999999999999")]
-	public void Enqueue_RejectsInvalidArgumentsWithoutExecuting(string text)
+	public void UpdateRejectsInvalidArgumentsWithoutCallingHandler(string text)
 	{
 		var registry = new CommandRegistry();
 		var calls = 0;
@@ -109,9 +119,8 @@ public sealed class CommandTextTests
 
 		var result = processor.Enqueue(text);
 
-		Assert.False(result.IsSuccess);
-		Assert.Equal(CommandErrorCode.InvalidArguments, result.Error.Code);
-		Assert.Empty(Collect(processor));
+		Assert.True(result.IsSuccess);
+		Assert.Equal(CommandErrorCode.InvalidArguments, Collect(processor)[0].Error.Code);
 		Assert.Equal(0, calls);
 	}
 
@@ -198,7 +207,7 @@ public sealed class CommandTextTests
 			}));
 		var processor = new CommandProcessor(registry);
 		processor.Enqueue(new Add(10));
-		foreach (var invalid in new[] { "add 1; missing; add 3", "add 1; add nope", "add 1; add \"unterminated", " ; ; " })
+		foreach (var invalid in new[] { "add 1; add \"unterminated", " ; ; " })
 			Assert.False(processor.Enqueue(invalid).IsSuccess);
 		processor.Update();
 		Assert.Equal(new[] { 10 }, seen);

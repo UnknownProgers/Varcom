@@ -10,6 +10,69 @@ namespace Varcom.Tests;
 public sealed class AllocationTests
 {
 	[Fact]
+	public void PreparedBatchInsertionDoesNotAllocateAfterWarmup()
+	{
+		var tokenizer = new CommandTokenizer("ping");
+		tokenizer.TryRead(out var call, out _);
+		var batch = new CommandInvocation[256];
+		Array.Fill(batch, call);
+		var registry = new CommandRegistry();
+		var calls = 0;
+		using var registration = registry.RegisterMethod(new("ping", "", Array.Empty<CommandParameter>()), _ =>
+		{
+			calls++;
+			return CommandResult.Ok();
+		});
+		var processor = new CommandProcessor(registry);
+		for (var i = 0; i < 100; i++)
+		{
+			processor.Insert(batch);
+			processor.Update();
+		}
+
+		var before = GC.GetAllocatedBytesForCurrentThread();
+		for (var i = 0; i < 1000; i++)
+		{
+			processor.Insert(batch);
+			processor.Update();
+		}
+
+		var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+		Assert.Equal(1100 * 256, calls);
+		Assert.Equal(0L, allocated);
+	}
+
+	[Fact]
+	public void InsertedTextAndExpectedErrorsDoNotAllocateAfterWarmup()
+	{
+		var registry = new CommandRegistry();
+		var calls = 0;
+		using var registration = registry.RegisterMethod(new("ping", "", Array.Empty<CommandParameter>()), _ =>
+		{
+			calls++;
+			return CommandResult.Ok();
+		});
+		var processor = new CommandProcessor(registry);
+		const string script = "ping; unknown\nping\r\n";
+		for (var i = 0; i < 1000; i++)
+		{
+			processor.Insert(script);
+			processor.Update();
+		}
+
+		var before = GC.GetAllocatedBytesForCurrentThread();
+		for (var i = 0; i < 10000; i++)
+		{
+			processor.Insert(script);
+			processor.Update();
+		}
+
+		var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+		Assert.Equal(22000, calls);
+		Assert.Equal(0L, allocated);
+	}
+
+	[Fact]
 	public void ResultsFormattingAndUnavailableLookupsDoNotAllocate()
 	{
 		var registry = new CommandRegistry();
@@ -21,6 +84,7 @@ public sealed class AllocationTests
 			CommandResult.Fail("Expected failure");
 			registry.ReadVariable("missing");
 			processor.Enqueue(new Add(1));
+			processor.Update();
 		}
 
 		var failures = 0;
@@ -30,7 +94,8 @@ public sealed class AllocationTests
 			if (!CommandResult.Ok(12345).Value.TryFormat(buffer, out _)) failures++;
 			if (CommandResult.Fail("Expected failure").IsSuccess) failures++;
 			if (registry.ReadVariable("missing").IsSuccess) failures++;
-			if (processor.Enqueue(new Add(1)).IsSuccess) failures++;
+			if (!processor.Enqueue(new Add(1)).IsSuccess) failures++;
+			processor.Update();
 		}
 
 		var allocated = GC.GetAllocatedBytesForCurrentThread() - before;

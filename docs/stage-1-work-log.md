@@ -161,3 +161,55 @@
 - Verified NuGet 0.1.0-alpha.3 in an isolated PackageReference-only sample; BenchmarkDotNet
   is absent from the package's runtime dependencies.
 - Applied JetBrains Reformat Code with project settings; repeated pass changed zero files.
+
+## Command text insertion — 2026-11-26
+
+- Added CommandProcessor.Insert(string) for host-defined exec commands.
+- Inserted text executes before the queue remainder, including nested scripts in the same Update.
+- Commands resolve and validate individually when reached; failures do not reject a whole script.
+- Physical lines provide recovery boundaries for malformed quotes; ordinary Enqueue is unchanged.
+- Added a test exec with in-memory scripts covering nesting, failures, dynamic registration,
+  callback interruption, repeated insertion order and typed payload alignment.
+- Added a warmed zero-allocation check for inserted commands and expected lookup errors.
+- Validation: 83 Core tests and 49 generator tests passed in Release, including zero-byte
+  warmed insertion. Applied JetBrains Built-in: Reformat Code with project settings.
+
+## Unified execution queue — 2026-11-27
+
+- Replaced the separate insertion list with one array-backed linked execution queue.
+- Bound invocations and deferred text continuations share scheduling and execution.
+- Insert links nodes before pending work without shifting entries; free nodes are reused.
+- A batch boundary preserves next-update Enqueue semantics, including callback interruption.
+- Removed InsertedText and reused CommandScanner for lexical command boundaries and recovery.
+- Preserved early binding for Enqueue and late binding for Insert; no per-update budget added.
+- Validation: 86 Core tests and 49 generator tests passed in Release, including warmed
+  zero-allocation insertion. Added queue growth/reuse, callback interruption and binding-time
+  regression cases. Applied JetBrains Built-in: Reformat Code with project settings.
+
+## Tokenized calls and late resolution — 2026-11-27
+
+- Added public CommandTokenizer and immutable CommandInvocation without registry dependencies.
+- Enqueue and Insert retain tokens; name/type lookup and argument validation now run during Update.
+- Added single-call and ReadOnlySpan batch overloads for both queue operations.
+- Removed source continuations, execution-time token scanning and the old binding parser.
+- Typed queues consume payloads even when no handler is currently registered.
+- Test exec tokenizes in the application, reports syntax failures and inserts valid calls.
+- Convenience text methods reject syntax atomically and reuse rented token arrays after warmup.
+- Updated lifetime and error-timing tests for the intentional contract change.
+- Validation: 97 Core tests and 49 generator tests passed in Release. Warmed text processing
+  and prepared 256-call batches measured zero bytes allocated. Checked syntax rollback,
+  callback interruption, changed parameter schemas, new level registrations and reuse across
+  processors. Applied JetBrains Built-in: Reformat Code with project settings.
+
+## Text preparation responsibility — 2026-11-27
+
+- Kept both string overloads, delegating preparation to CommandTextPreparer.
+- Removed tokenization, staging, ArrayPool usage and the insert-mode flag from CommandProcessor.
+- Added a synchronous prepared-batch lease: queue acceptance explicitly transfers each call;
+  disposal releases only unaccepted token rentals. Later preparations cannot clear queued calls.
+- Unified string grammar: physical newlines and unquoted semicolons separate calls; empty
+  input and malformed quotes are rejected atomically by both string overloads.
+- Added grammar parity and repeated-preparation lifetime regressions.
+- Validation: 102 Core tests and 49 generator tests passed in Release, including warmed
+  allocation checks and preparation ownership regressions. Applied JetBrains Reformat Code
+  with the project's settings; git diff --check passed.

@@ -31,7 +31,6 @@ public readonly record struct Payload128Command(
 	int Y,
 	int Z,
 	CmdString Label) : ICommand;
-
 [CmdHandler(typeof(Payload128Command))]
 public sealed class Payload128Handler : ICommandHandler<Payload128Command>
 {

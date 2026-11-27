@@ -62,7 +62,10 @@ public sealed class CommandModuleGeneratorTests
 		var firstModule = (IDisposable)Activator.CreateInstance(assembly.GetType("FirstModule")!, registry, first)!;
 		var processor = new CommandProcessor(registry);
 		Assert.True(processor.Enqueue("first").IsSuccess);
-		Assert.False(processor.Enqueue("second 7").IsSuccess);
+		Assert.True(processor.Enqueue("second 7").IsSuccess);
+		CommandResult unavailable = default;
+		processor.Update(r => unavailable = r);
+		Assert.Equal(CommandErrorCode.UnknownCommand, unavailable.Error.Code);
 		using var secondModule = (IDisposable)Activator.CreateInstance(assembly.GetType("SecondModule")!, registry, second)!;
 		Assert.True(processor.Enqueue("second 7").IsSuccess);
 		processor.Update();
@@ -71,7 +74,7 @@ public sealed class CommandModuleGeneratorTests
 
 		firstModule.Dispose();
 		firstModule.Dispose();
-		Assert.False(processor.Enqueue("first").IsSuccess);
+		Assert.True(processor.Enqueue("first").IsSuccess);
 		Assert.True(processor.Enqueue("second 8").IsSuccess);
 		processor.Update();
 		Assert.Equal(8, second.GetType().GetProperty("Number")!.GetValue(second));

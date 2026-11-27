@@ -25,7 +25,8 @@ public sealed class CommandModuleTests
 
 		Assert.Empty(registry.GetEntries());
 		Assert.False(owner.IsDisposed);
-		Assert.Equal(CommandErrorCode.UnknownCommand, processor.Enqueue("number").Error.Code);
+		Assert.True(processor.Enqueue("number").IsSuccess);
+		Assert.Equal(CommandErrorCode.UnknownCommand, TestCommands.Collect(processor)[0].Error.Code);
 	}
 
 	[Fact]
@@ -47,7 +48,7 @@ public sealed class CommandModuleTests
 	}
 
 	[Fact]
-	public void QueuedOldCallsAreNotRedirectedToANewModule()
+	public void QueuedCallsResolveTheActiveModuleAtExecution()
 	{
 		var registry = new CommandRegistry();
 		var processor = new CommandProcessor(registry);
@@ -59,13 +60,13 @@ public sealed class CommandModuleTests
 		var owner = new GeneratedOwner();
 		using var current = new TestModule(registry, handler, owner);
 		var results = TestCommands.Collect(processor);
-		Assert.All(results, result => Assert.Equal(CommandErrorCode.Unavailable, result.Error.Code));
-		Assert.Equal(0, owner.Number);
-		Assert.Equal(0, handler.Count);
+		Assert.All(results, result => Assert.True(result.IsSuccess));
+		Assert.Equal(7, owner.Number);
+		Assert.Equal(5, handler.Count);
 		Assert.True(processor.Enqueue("number 9; generated new 2").IsSuccess);
 		processor.Update();
 		Assert.Equal(9, owner.Number);
-		Assert.Equal(2, handler.Count);
+		Assert.Equal(7, handler.Count);
 	}
 
 	[Fact]

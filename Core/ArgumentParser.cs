@@ -32,11 +32,11 @@ internal sealed class ArgumentParser
 	}
 
 	internal static bool Supports(Type type) => type == typeof(CmdString)
-	                                            || type == typeof(bool)
-	                                            || type == typeof(int)
-	                                            || type == typeof(float)
-	                                            || type == typeof(double)
-	                                            || type.IsEnum;
+		|| type == typeof(bool)
+		|| type == typeof(int)
+		|| type == typeof(float)
+		|| type == typeof(double)
+		|| type.IsEnum;
 
 	internal CommandValue Default(int index) => _defaults[index];
 

@@ -10,46 +10,75 @@ namespace Varcom;
 public sealed class CommandProcessor(CommandRegistry registry, int initialCapacity = 128)
 {
 	private readonly CommandRegistry _registry = registry ?? throw new ArgumentNullException(nameof(registry));
-	private readonly Queue<QueuedInvocation> _executionQueue = new(initialCapacity);
-	private readonly List<ParsedCommand> _parsedCommands = new(initialCapacity);
+	private readonly ExecutionQueue _executionQueue = new(initialCapacity);
+	private readonly CommandTextPreparer _textPreparer = new(initialCapacity);
 	private readonly ArgumentBuffer _argumentBuffer = new();
 	private readonly Dictionary<Type, ICommandBuffer> _commandBuffers = new();
 	private bool _updating;
 
-	/// <summary>Parses a command sequence and queues it only if every invocation is valid.</summary>
+	/// <summary>Inserts an immutable tokenized call before pending work. Registration is resolved at execution.</summary>
+	public void Insert(CommandInvocation command)
+	{
+		_executionQueue.Insert(QueuedInvocation.FromText(command));
+	}
+
+	/// <summary>Inserts a batch in input order. The span is consumed synchronously and is never retained.</summary>
+	public void Insert(ReadOnlySpan<CommandInvocation> commands)
+	{
+		foreach (var command in commands)
+			_executionQueue.Insert(QueuedInvocation.FromText(command));
+	}
+
+	/// <summary>Convenience text insertion. Only syntax is checked now; lookup and arguments are checked during Update.</summary>
+	public CommandResult Insert(string commandText)
+	{
+		using var prepared = _textPreparer.Prepare(commandText);
+		if (!prepared.Result.IsSuccess)
+			return prepared.Result;
+
+		while (prepared.TryDequeue(out var command))
+			_executionQueue.Insert(command);
+
+		return CommandResult.Ok();
+	}
+
+	/// <summary>Tokenizes a sequence atomically. Success means accepted, not that commands are available or arguments valid.</summary>
 	public CommandResult Enqueue(string commandLine)
 	{
-		try
-		{
-			var result = CommandLineParser.Parse(commandLine, _registry, _parsedCommands, _argumentBuffer);
-			if (!result.IsSuccess)
-				return result;
+		using var prepared = _textPreparer.Prepare(commandLine);
+		if (!prepared.Result.IsSuccess)
+			return prepared.Result;
 
-			foreach (var command in _parsedCommands)
-				_executionQueue.Enqueue(QueuedInvocation.FromParsed(command));
+		while (prepared.TryDequeue(out var command))
+			_executionQueue.Enqueue(command);
 
-			return CommandResult.Ok();
-		}
-		finally
-		{
-			_parsedCommands.Clear();
-		}
+		return CommandResult.Ok();
+	}
+
+	/// <summary>Queues a tokenized call for late resolution.</summary>
+	public void Enqueue(CommandInvocation command)
+	{
+		_executionQueue.Enqueue(QueuedInvocation.FromText(command));
+	}
+
+	/// <summary>Queues tokenized calls in input order.</summary>
+	public void Enqueue(ReadOnlySpan<CommandInvocation> commands)
+	{
+		foreach (var command in commands)
+			_executionQueue.Enqueue(QueuedInvocation.FromText(command));
 	}
 
 	/// <summary>Queues typed data. Success means accepted, not executed.</summary>
 	public CommandResult Enqueue<TCommand>(in TCommand command) where TCommand : struct, ICommand
 	{
-		if (!_registry.TryGet<TCommand>(out var binding))
-			return CommandResult.Fail(new CommandError(CommandErrorCode.Unavailable, "No handler for command type."));
-
 		var buffer = GetOrCreateBuffer<TCommand>();
 		buffer.Add(in command);
-		_executionQueue.Enqueue(QueuedInvocation.FromTyped(binding, buffer));
+		_executionQueue.Enqueue(QueuedInvocation.FromTyped(buffer));
 		return CommandResult.Ok();
 	}
 
 	/// <summary>
-	/// Processes the batch present at entry, optionally delivering each result inline.
+	/// Processes the batch present at entry and inserted text, optionally delivering each result inline.
 	/// No result collection is allocated. A callback exception propagates and stops the batch.
 	/// </summary>
 	public void Update(Action<CommandResult>? onCompleted = null)
@@ -57,18 +86,22 @@ public sealed class CommandProcessor(CommandRegistry registry, int initialCapaci
 		if (_updating)
 			throw new InvalidOperationException("Reentrant Update is not supported.");
 
+		var boundary = _executionQueue.BeginBatch();
 		_updating = true;
 		try
 		{
-			var count = _executionQueue.Count;
-			for (var i = 0; i < count; i++)
+			while (_executionQueue.First != boundary)
 			{
-				var result = Execute(_executionQueue.Dequeue());
+				var invocation = _executionQueue.Dequeue();
+				_executionQueue.ResetInsertion();
+				var result = Execute(invocation);
 				onCompleted?.Invoke(result);
 			}
 		}
 		finally
 		{
+			_executionQueue.EndBatch(boundary);
+			_executionQueue.ResetInsertion();
 			_updating = false;
 		}
 	}
@@ -85,15 +118,19 @@ public sealed class CommandProcessor(CommandRegistry registry, int initialCapaci
 		return (TypedCommandBuffer<TCommand>)buffer;
 	}
 
-	private static CommandResult Execute(QueuedInvocation invocation)
+	private CommandResult Execute(QueuedInvocation invocation)
 	{
 		try
 		{
-			return invocation.Execute();
+			return invocation.Execute(_registry, _argumentBuffer);
 		}
 		catch (Exception ex)
 		{
 			return CommandResult.Fail(ex.Message);
+		}
+		finally
+		{
+			invocation.Release();
 		}
 	}
 }
