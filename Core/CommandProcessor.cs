@@ -14,7 +14,12 @@ public sealed class CommandProcessor(CommandRegistry registry, int initialCapaci
 	private readonly CommandTextPreparer _textPreparer = new(initialCapacity);
 	private readonly ArgumentBuffer _argumentBuffer = new();
 	private readonly Dictionary<Type, ICommandBuffer> _commandBuffers = new();
+
 	private bool _updating;
+	private bool _stopBatch;
+	private bool _suspended;
+	private long _remainingFrames;
+	private ulong _suspensionGeneration;
 
 	/// <summary>Inserts an immutable tokenized call before pending work. Registration is resolved at execution.</summary>
 	public void Insert(CommandInvocation command)
@@ -77,20 +82,71 @@ public sealed class CommandProcessor(CommandRegistry registry, int initialCapaci
 		return CommandResult.Ok();
 	}
 
+	/// <summary>Resumes on the Nth subsequent Update. Zero does not pause; frames mean processor updates.</summary>
+	public CommandResult WaitFrames(long frames)
+	{
+		if (frames < 0)
+			return CommandResult.Fail(CommandErrorCode.InvalidArguments, "Invalid frame delay.");
+
+		if (_suspended || _remainingFrames > 0)
+			return CommandResult.Fail(CommandErrorCode.ExecutionFailed, "The processor is already waiting.");
+
+		if (frames == 0)
+			return CommandResult.Ok();
+
+		_remainingFrames = frames;
+		_stopBatch = true;
+
+		return CommandResult.Ok();
+	}
+
+	/// <summary>Starts one external wait, or returns failure if already waiting. Failed requests output a default token.</summary>
+	public CommandResult Suspend(out CommandSuspension suspension)
+	{
+		suspension = default;
+		if (_suspended || _remainingFrames > 0)
+			return CommandResult.Fail(CommandErrorCode.ExecutionFailed, "The processor is already waiting.");
+
+		_suspensionGeneration = unchecked(_suspensionGeneration + 1);
+		_suspended = true;
+		_stopBatch = true;
+
+		suspension = new CommandSuspension(this, _suspensionGeneration);
+		return CommandResult.Ok();
+	}
+
+	/// <summary>Accepts only the active suspension's signal. Execution continues on a subsequent Update, never inline.</summary>
+	public bool Resume(CommandSuspension suspension)
+	{
+		if (!_suspended || suspension.Owner != this || suspension.Generation != _suspensionGeneration)
+			return false;
+
+		_suspended = false;
+		return true;
+	}
+
 	/// <summary>
-	/// Processes the batch present at entry and inserted text, optionally delivering each result inline.
-	/// No result collection is allocated. A callback exception propagates and stops the batch.
+	/// Processes the current batch unless paused. Each call advances a frame wait by one frame.
+	/// Results are delivered before stopping. Callback exceptions preserve remaining work and waits.
 	/// </summary>
 	public void Update(Action<CommandResult>? onCompleted = null)
 	{
 		if (_updating)
 			throw new InvalidOperationException("Reentrant Update is not supported.");
 
+		if (_suspended)
+			return;
+
+		if (_remainingFrames > 0 && --_remainingFrames > 0)
+			return;
+
+		_stopBatch = false;
+
 		var boundary = _executionQueue.BeginBatch();
 		_updating = true;
 		try
 		{
-			while (_executionQueue.First != boundary)
+			while (_executionQueue.First != boundary && !_stopBatch)
 			{
 				var invocation = _executionQueue.Dequeue();
 				_executionQueue.ResetInsertion();

@@ -10,6 +10,77 @@ namespace Varcom.Tests;
 public sealed class AllocationTests
 {
 	[Fact]
+	public void ExternalSuspendAndResumeDoNotAllocateAfterWarmup()
+	{
+		var registry = new CommandRegistry();
+		var processor = new CommandProcessor(registry);
+		var calls = 0;
+		using var ping = registry.RegisterMethod(new("ping", "", Array.Empty<CommandParameter>()), _ =>
+		{
+			calls++;
+			return CommandResult.Ok();
+		});
+		var tokenizer = new CommandTokenizer("ping");
+		tokenizer.TryRead(out var command, out _);
+		for (var i = 0; i < 1000; i++)
+		{
+			processor.Suspend(out var token);
+			processor.Enqueue(command);
+			processor.Update();
+			processor.Resume(token);
+			processor.Update();
+		}
+
+		var before = GC.GetAllocatedBytesForCurrentThread();
+		for (var i = 0; i < 10000; i++)
+		{
+			processor.Suspend(out var token);
+			processor.Enqueue(command);
+			processor.Update();
+			processor.Resume(token);
+			processor.Update();
+		}
+
+		var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+		Assert.Equal(11000, calls);
+		Assert.Equal(0L, allocated);
+	}
+
+	[Fact]
+	public void FrameWaitingAndResumingDoNotAllocateAfterWarmup()
+	{
+		var registry = new CommandRegistry();
+		var processor = new CommandProcessor(registry);
+		var calls = 0;
+		using var wait = registry.RegisterMethod(new("wait", "", Array.Empty<CommandParameter>()), _ => processor.WaitFrames(2));
+		using var ping = registry.RegisterMethod(new("ping", "", Array.Empty<CommandParameter>()), _ =>
+		{
+			calls++;
+			return CommandResult.Ok();
+		});
+		for (var i = 0; i < 1000; i++)
+		{
+			processor.Enqueue("wait; ping");
+			processor.Update();
+			processor.Update();
+			processor.Update();
+		}
+
+		var before = GC.GetAllocatedBytesForCurrentThread();
+		for (var i = 1000; i < 11000; i++)
+		{
+			processor.Enqueue("wait; ping");
+			processor.Update();
+			processor.Update();
+			processor.Update();
+		}
+
+		var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+		Assert.Equal(11000, calls);
+		Assert.Equal(0L, allocated);
+	}
+
+	[Fact]
 	public void PreparedBatchInsertionDoesNotAllocateAfterWarmup()
 	{
 		var tokenizer = new CommandTokenizer("ping");

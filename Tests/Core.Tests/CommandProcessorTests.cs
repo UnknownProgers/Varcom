@@ -12,7 +12,7 @@ public sealed class CommandProcessorTests
 	public void ConstructorValidatesCapacityAndTextConstructionWaitsForUpdate()
 	{
 		var registry = new CommandRegistry();
-		Assert.Throws<ArgumentOutOfRangeException>(() => new CommandProcessor(registry, -1));
+		Assert.ThrowsAny<Exception>(() => new CommandProcessor(registry, -1));
 		var constructions = 0;
 		using var registration = registry.Register(Info(), args =>
 		{

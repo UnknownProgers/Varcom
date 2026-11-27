@@ -245,7 +245,7 @@ Enqueue calls made by handlers on the next Update. Multiple inserts preserve cal
 nested exec handlers insert before their caller's remainder. Callback failures preserve work.
 Bindings have no reference to processor queues. Numeric parsing remains at validation and
 argument access, but tokenization occurs only at acceptance. Reflection is limited to setup
-for manually declared enum parameter metadata. No wait or per-update budget is introduced.
+for manually declared enum parameter metadata. WaitFrames and external suspension pause the entire queue; no per-update budget is introduced.
 
 ## Test organization
 
@@ -254,3 +254,24 @@ runner. Each Core behavior group has its own test class; invalid input cases are
 Assertions report expected values, sequences and exception types. Allocation checks are
 isolated in a collection with DisableParallelization and perform assertions after measurement.
 The sample remains an executable consumer; it is not a replacement for unit tests.
+
+## Frame waiting and external suspension
+
+Update(callback) is the only update method. WaitFrames(long count) can be called during or
+between updates and returns CommandResult. Positive N resumes on the Nth subsequent Update; zero is a no-op,
+negative values return InvalidArguments. Counting starts with the next Update.
+Frame counting belongs to processor updates, not rendering, simulation ticks or wall time.
+
+Suspend(out CommandSuspension token) returns CommandResult and stops the queue on success. Resume(token) returns true
+only for that processor's active suspension; default, foreign, stale or duplicate tokens are
+ignored. Suspend can be requested during or outside Update. Resume never executes inline,
+and an immediate signal during a handler still defers continuation to the next Update.
+Only one wait can be active. Repeated Suspend or WaitFrames (including zero) returns
+ExecutionFailed and leaves the original wait unchanged. Failed Suspend outputs a default
+token. New waiting is allowed once the active wait completes or is resumed.
+
+Both modes pause the whole queue while allowing Enqueue/Insert. The batch boundary is
+removed when pausing; callbacks, errors, ordering and late binding keep their usual behavior.
+Callback exceptions preserve pending waits. Application code checks readiness, observes
+external conditions and delivers signals on the processor's thread. Varcom owns no clocks,
+conditions, event subscriptions, Task or timers. Command names and handlers are application-owned.

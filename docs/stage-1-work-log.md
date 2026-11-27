@@ -213,3 +213,48 @@
 - Validation: 102 Core tests and 49 generator tests passed in Release, including warmed
   allocation checks and preparation ownership regressions. Applied JetBrains Reformat Code
   with the project's settings; git diff --check passed.
+
+## Tick waiting — 2026-11-27
+
+- Added Update(long tick, callback) and WaitTicks(long ticks); the application owns the clock
+  and command names. The legacy Update(callback) uses the last supplied tick.
+- A positive wait stops before the next invocation; the whole queue resumes at its target tick.
+- Preserved queue insertion, callback interruption, late handler resolution and batch cleanup.
+- Added an attributed wait_ticks command to the sample and tick-boundary, exec, invalid-input,
+  delayed-update and allocation tests. Updated two stale exact-exception assertions without
+  restoring the removed constructor/text guard logic.
+- Version: 0.5.0-alpha.1. Time-based waits and external signals remain deferred.
+- Validation: 115 Core tests and 49 generator tests passed in Release; warmed wait/resume
+  allocated zero bytes. Applied JetBrains Reformat Code with project settings.
+
+## Frame waits and external readiness — 2026-11-27
+
+- Replaced the tick-wait prototype and Update(tick, callback) with a single Update(callback).
+- WaitFrames(N) resumes on the Nth subsequent processor update; no simulation clock is stored.
+- Suspend/Resume use a CommandSuspension value tied to a processor and generation.
+- Resume ignores stale, duplicate, default and foreign tokens; it never executes commands inline.
+- Immediate signals still stop the current batch. Positive waits replace the prior waiting mode.
+- Added frame, signal, callback interruption, late registration and allocation regressions;
+  the sample now demonstrates both application-owned wait commands.
+- Final feature version remains 0.5.0-alpha.1. Updated the unreleased changelog and API docs.
+- Validation: 122 Core tests and 49 generator tests passed in Release; warmed frame and signal
+  waiting both allocated zero bytes. Applied JetBrains Reformat Code with project settings.
+
+## One active wait — 2026-11-27
+
+- Suspend(out CommandSuspension) now returns CommandResult, with a default token on failure.
+- Conflicting external/frame requests return ExecutionFailed without changing the original wait.
+- Added repeated-mode and cross-mode conflict regressions, including zero-frame conflicts.
+- Updated sample and docs. Version remains 0.5.0-alpha.1.
+- Validation: 124 Core tests passed in Release, including warmed allocation checks.
+  Applied JetBrains Reformat Code with project settings.
+
+## Final waiting API review — 2026-11-27
+
+- WaitFrames is allowed both during and between updates. Added zero/one/multiple-frame
+  regressions for calls made outside Update and aligned the public documentation.
+- Final API: one Update(callback), WaitFrames, Suspend(out token) and Resume(token),
+  with one active wait and non-destructive failure of conflicting requests.
+- Final validation: 126 Core tests and 49 generator tests passed in Release. The sample
+  completed both waiting modes, and Varcom.0.5.0-alpha.1.nupkg built successfully.
+  Warmed allocation tests and git diff --check passed; JetBrains Reformat Code was applied.

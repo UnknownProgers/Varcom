@@ -1,6 +1,6 @@
 # Varcom
 
-Current version: **0.4.0-alpha.1**.
+Current version: **0.5.0-alpha.1**.
 
 A C# command and console variable framework for games, featuring attribute-based
 declarations, source generation, typed handlers, and queued execution.
@@ -269,7 +269,56 @@ Warmed convenience text enqueue/insertion reuses rented token arrays, returning 
 them after execution. Prepared invocations can also be queued repeatedly without allocations
 within queue capacity. Initial rentals, public tokenization, loading text and buffer growth
 can allocate. CmdString results retain immutable source strings rather than rented arrays.
-No per-update budget, wait implementation or recursion limit is introduced.
+No per-update budget or recursion limit is imposed.
+
+## Waiting for frames or application readiness
+
+There is one `Update(callback)` method. Varcom has no clock or tick input.
+An application handler requests `processor.WaitFrames(count)` and returns its result:
+
+```csharp
+[Cmd("wait")]
+public CommandResult Wait(int frames) => processor.WaitFrames(frames);
+```
+
+A frame means one call to this processor's Update, not necessarily a rendered frame.
+WaitFrames(1) resumes on the next Update. WaitFrames(2) stops the current batch, skips the
+next Update and resumes on the second subsequent Update. Zero does not pause; negative
+counts return InvalidArguments. WaitFrames may be called during or between updates;
+counting starts with the next Update in either case. Names such as wait are ordinary
+application declarations, not built-ins.
+
+For conditions such as level readiness, the application owns observation and signaling:
+
+```csharp
+// In an application handler, when the level is not ready:
+var result = processor.Suspend(out var token);
+if (result.IsSuccess) pending = token;
+// Return result from the handler.
+
+// Later, after the application observes readiness, on the same game thread:
+processor.Resume(pending); // Returns true only for the active suspension.
+// Execution continues when the host next calls processor.Update().
+```
+
+Check readiness before suspending if the condition may already hold. Suspend may also be
+called outside Update. It returns CommandResult and provides a token only on success.
+Only one wait may be active: another Suspend or WaitFrames returns ExecutionFailed without
+changing the original token or frame count. A failed Suspend outputs a default token. Tokens are tied to
+one processor and generation: default, foreign, stale and duplicate signals return false.
+Resume never executes commands inline. Even Suspend followed by Resume inside the same
+handler ends that batch; remaining commands execute on the next Update. WaitFrames(0) is
+a no-op only when no wait is active; it also fails if an existing wait is active.
+
+Both modes pause the entire queue. Enqueue and Insert keep accepting calls; inserted calls
+still precede the remainder. Callback results include the wait command itself, with no extra
+results during skipped updates. Callback exceptions preserve waits and remaining calls.
+Scheduling is a side effect: a later handler error does not undo an earlier wait request.
+Nested exec scripts and newly available registrations work normally after resumption.
+
+The application watches conditions and transfers background notifications to its game thread.
+Varcom stores no predicates, event subscriptions, Task or timers. Replays schedule calls in
+the application independently. Both waiting modes allocate zero bytes after warmup.
 
 ## Declarations and available commands
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.0-alpha.1 — 2026-11-27
+
+- Add WaitFrames during or between updates, counting calls to the single Update(callback) method.
+- Add Suspend/Resume with processor-specific generation tokens for application-controlled readiness.
+- Ignore stale, duplicate, default and foreign signals; resume only on a subsequent Update.
+- Allow one active wait; conflicting frame/signal requests fail without replacing it.
+- Preserve pending calls, insertion order, late binding and callbacks across both waiting modes.
+- Add frame and readiness commands to the sample, exec/wait regressions and warmed allocation checks.
+
+The processor has no tick/time input, built-in wait command, predicates or event subscriptions.
+
 ## 0.4.0-alpha.1 — 2026-11-27
 
 - Add public CommandTokenizer and immutable CommandInvocation for registry-independent text preparation.
