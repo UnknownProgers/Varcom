@@ -98,7 +98,7 @@ public sealed class CommandRegistry
 		}
 		catch (Exception ex)
 		{
-			return CommandResult.Fail(ex.Message);
+			return CommandResult.FromException(ex);
 		}
 	}
 

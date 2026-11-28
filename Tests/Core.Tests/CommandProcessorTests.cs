@@ -24,7 +24,7 @@ public sealed class CommandProcessorTests
 		Assert.True(processor.Enqueue("add -1; add 2").IsSuccess);
 		Assert.Equal(0, constructions);
 		var results = Collect(processor);
-		Assert.Equal(CommandErrorCode.ExecutionFailed, results[0].Error.Code);
+		Assert.Equal(CommandErrorCode.ExceptionThrown, results[0].Error.Code);
 		Assert.True(results[1].IsSuccess);
 		Assert.Equal(2, constructions);
 	}

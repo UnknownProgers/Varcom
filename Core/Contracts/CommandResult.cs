@@ -36,4 +36,8 @@ public readonly record struct CommandResult
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static CommandResult Fail(string message) => Fail(new CommandError(CommandErrorCode.ExecutionFailed, message));
+
+	/// <summary>Preserves an exception as a distinguishable failure, including its original stack trace.</summary>
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static CommandResult FromException(Exception exception) => Fail(new CommandError(exception));
 }

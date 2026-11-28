@@ -1,6 +1,6 @@
 # Varcom
 
-Current version: **0.6.0-alpha.1**.
+Current version: **0.6.1-alpha.1**.
 
 A C# command and console variable framework for games, featuring attribute-based
 declarations, source generation, typed handlers, and queued execution.
@@ -26,6 +26,12 @@ creates a typed enum result. `CommandError` is also a value type; check `IsSucce
 `Error.Code`/`Error.Message`. Expected errors carry stable messages and parameter names;
 the caller retains the submitted input for display. Constructing dynamic messages or
 throwing exceptions can still allocate.
+Caught command execution exceptions and exceptions from `ReadVariable` return
+`CommandErrorCode.ExceptionThrown`. `result.Error.Exception` retains the original exception,
+including its stack trace; retaining that result also retains the exception. Ordinary
+`CommandResult.Fail("message")` still returns `ExecutionFailed` with no exception.
+`CommandResult.FromException(exception)` explicitly creates the same exception result.
+Registration errors and completion callback exceptions still propagate to the host.
 
 Commands are always structs. Enqueue, registration and handlers enforce `struct, ICommand`;
 class commands and interface-typed submissions are rejected at compile time.
@@ -113,7 +119,7 @@ handles on the same game thread.
 Reference the Varcom package. It includes the runtime and the source generator.
 
 ```sh
-dotnet add package Varcom --version 0.6.0-alpha.1
+dotnet add package Varcom --version 0.6.1-alpha.1
 ```
 
 Varcom is available on [nuget.org](https://www.nuget.org/packages/Varcom/).

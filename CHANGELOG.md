@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.1-alpha.1 — 2026-11-28
+
+- Distinguish caught execution and variable-read exceptions with `ExceptionThrown`.
+- Preserve the original exception and its stack trace in `CommandError.Exception`.
+- Add `CommandResult.FromException`; keep ordinary failures as `ExecutionFailed`.
+- Keep registration errors and completion callback exceptions propagating to the host.
+
 ## 0.6.0-alpha.1 — 2026-11-27
 
 - Scope frame and external waits to independently submitted command sequences.

@@ -10,5 +10,6 @@ public enum CommandErrorCode
 	InvalidArguments,
 	Unavailable,
 	ReadOnly,
-	ExecutionFailed
+	ExecutionFailed,
+	ExceptionThrown
 }

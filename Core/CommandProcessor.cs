@@ -229,7 +229,7 @@ public sealed class CommandProcessor(CommandRegistry registry, int initialCapaci
 		}
 		catch (Exception ex)
 		{
-			return CommandResult.Fail(ex.Message);
+			return CommandResult.FromException(ex);
 		}
 		finally
 		{
