@@ -1,6 +1,6 @@
 # Varcom
 
-Current version: **0.6.1-alpha.1**.
+Current version: **0.6.2-alpha.1**.
 
 A C# command and console variable framework for games, featuring attribute-based
 declarations, source generation, typed handlers, and queued execution.
@@ -87,6 +87,8 @@ or objects with commands/variables. The generator does not create an implicit mo
 A module registers several objects together, so you do not have to keep individual
 registration handles. The direct Register overloads above are lower-level generated APIs;
 modules are the normal entry point.
+Generated constructors and registration helpers assume a non-null registry and owners;
+they do not emit runtime null guards.
 
 ### Who owns the lifetime?
 
@@ -119,7 +121,7 @@ handles on the same game thread.
 Reference the Varcom package. It includes the runtime and the source generator.
 
 ```sh
-dotnet add package Varcom --version 0.6.1-alpha.1
+dotnet add package Varcom --version 0.6.2-alpha.1
 ```
 
 Varcom is available on [nuget.org](https://www.nuget.org/packages/Varcom/).

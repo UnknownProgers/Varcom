@@ -84,8 +84,6 @@ public sealed class CommandGenerator : IIncrementalGenerator
 			registeredOwners.Add(owner);
 			sb.Append("    public static global::System.IDisposable Register(this global::Varcom.CommandRegistry registry, ")
 				.Append(Type(owner)).AppendLine(" owner)\n    {");
-			sb.AppendLine(
-				"        global::System.ArgumentNullException.ThrowIfNull(registry);\n        global::System.ArgumentNullException.ThrowIfNull(owner);");
 			sb.AppendLine("        return global::Varcom.RegistrationGroup.Create(");
 			sb.Append(string.Join(",\n", registrations.Select(r => "            () => " + r)));
 			sb.AppendLine(");\n    }");
@@ -242,10 +240,10 @@ public sealed class CommandGenerator : IIncrementalGenerator
 	}
 
 	private static bool Supported(ITypeSymbol type) => type.TypeKind == TypeKind.Enum ||
-		type.ToDisplayString() == "Varcom.Contracts.CmdString" || type.SpecialType is
-			SpecialType.System_Boolean or SpecialType.System_Int32
-			or SpecialType.System_Single
-			or SpecialType.System_Double;
+	                                                   type.ToDisplayString() == "Varcom.Contracts.CmdString" || type.SpecialType is
+		                                                   SpecialType.System_Boolean or SpecialType.System_Int32
+		                                                   or SpecialType.System_Single
+		                                                   or SpecialType.System_Double;
 
 	private static string Info(AttributeData attr, IParameterSymbol[] parameters, bool metadata) =>
 		$"new global::Varcom.Contracts.CommandInfo("

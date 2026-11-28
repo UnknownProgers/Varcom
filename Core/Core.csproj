@@ -6,7 +6,7 @@
 		<AssemblyName>Varcom</AssemblyName>
 		<RootNamespace>Varcom</RootNamespace>
 		<PackageId>Varcom</PackageId>
-		<Version>0.6.1-alpha.1</Version>
+		<Version>0.6.2-alpha.1</Version>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<Authors>UnknownProgers</Authors>

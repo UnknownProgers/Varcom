@@ -13,7 +13,7 @@ internal static class CommandModuleGenerator
 		IReadOnlyList<INamedTypeSymbol> owners)
 	{
 		var registrationType = "global::Varcom.Generated." + CommandGenerator.Safe(compilation.AssemblyName ?? "Application") +
-			".CommandRegistration";
+		                       ".CommandRegistration";
 		if (modules.Length == 0)
 		{
 			if (owners.Count != 0)
@@ -93,7 +93,7 @@ internal static class CommandModuleGenerator
 		    module.IsGenericType ||
 		    module.ContainingType != null || module.BaseType?.SpecialType != SpecialType.System_Object ||
 		    module.DeclaringSyntaxReferences.Any(r => r.GetSyntax() is not ClassDeclarationSyntax syntax ||
-			    !syntax.Modifiers.Any(SyntaxKind.PartialKeyword)))
+		                                              !syntax.Modifiers.Any(SyntaxKind.PartialKeyword)))
 		{
 			CommandGenerator.Report(context, module,
 				"CmdModule must be a non-abstract, non-generic top-level partial class without a base class.");
@@ -126,18 +126,18 @@ internal static class CommandModuleGenerator
 		if (SymbolEqualityComparer.Default.Equals(owner.ContainingAssembly, compilation.Assembly)) return null;
 		var registration =
 			compilation.GetTypeByMetadataName("Varcom.Generated." + CommandGenerator.Safe(owner.ContainingAssembly.Name) +
-				".CommandRegistration");
+			                                  ".CommandRegistration");
 		if (registration?.DeclaredAccessibility != Accessibility.Public) return null;
 		return registration.GetMembers("Register")
 			.OfType<IMethodSymbol>()
 			.Any(m => m.IsStatic && !m.IsGenericMethod &&
-				m.DeclaredAccessibility == Accessibility.Public &&
-				m.Parameters.Length == 2 &&
-				m.Parameters[0].Type.ToDisplayString() ==
-				"Varcom.CommandRegistry" &&
-				SymbolEqualityComparer.Default.Equals(
-					m.Parameters[1].Type, owner) &&
-				m.ReturnType.ToDisplayString() == "System.IDisposable")
+			          m.DeclaredAccessibility == Accessibility.Public &&
+			          m.Parameters.Length == 2 &&
+			          m.Parameters[0].Type.ToDisplayString() ==
+			          "Varcom.CommandRegistry" &&
+			          SymbolEqualityComparer.Default.Equals(
+				          m.Parameters[1].Type, owner) &&
+			          m.ReturnType.ToDisplayString() == "System.IDisposable")
 			? Type(registration)
 			: null;
 	}
@@ -146,9 +146,8 @@ internal static class CommandModuleGenerator
 		IReadOnlyList<INamedTypeSymbol> owners, IReadOnlyList<string> registrationTypes)
 	{
 		var namespaceDeclaration = ns.Length == 0 ? "" : $"namespace {ns};";
-		var parameters = string.Join("", owners.Select((owner, i) => $", {Type(owner)} owner{i}"));
-		var ownerChecks = string.Join("\n", owners.Select((_, i) =>
-			$"        global::System.ArgumentNullException.ThrowIfNull(owner{i});"));
+		var parameters = string.Join(",\n", new[] { "        global::Varcom.CommandRegistry registry" }
+			.Concat(owners.Select((owner, i) => $"        {Type(owner)} owner{i}")));
 		var registrations = string.Join(",\n", registrationTypes.Select((type, i) =>
 			$"            () => {type}.Register(registry, owner{i})"));
 
@@ -161,10 +160,9 @@ internal static class CommandModuleGenerator
 		               {
 		                   private global::System.IDisposable? _varcomRegistration;
 
-		                   public @{{name}}(global::Varcom.CommandRegistry registry{{parameters}})
+		                   public @{{name}}(
+		               {{parameters}})
 		                   {
-		                       global::System.ArgumentNullException.ThrowIfNull(registry);
-		               {{ownerChecks}}
 		                       _varcomRegistration = global::Varcom.RegistrationGroup.Create(
 		               {{registrations}});
 		                   }

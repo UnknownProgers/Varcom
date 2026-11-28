@@ -40,14 +40,6 @@ public sealed class CommandModuleTests
 	}
 
 	[Fact]
-	public void NullDependenciesDoNotLeaveRegistrationsBehind()
-	{
-		var registry = new CommandRegistry();
-		Assert.Throws<ArgumentNullException>(() => new TestModule(registry, new GeneratedHandler(), null!));
-		Assert.Empty(registry.GetEntries());
-	}
-
-	[Fact]
 	public void QueuedCallsResolveTheActiveModuleAtExecution()
 	{
 		var registry = new CommandRegistry();

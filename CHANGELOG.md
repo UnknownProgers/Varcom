@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.2-alpha.1 — 2026-11-28
+
+- Emit each generated module constructor parameter on its own line.
+- Remove generated null guards from module constructors, owner registrations and metadata entry points.
+
 ## 0.6.1-alpha.1 — 2026-11-28
 
 - Distinguish caught execution and variable-read exceptions with `ExceptionThrown`.

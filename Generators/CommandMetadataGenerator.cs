@@ -91,7 +91,6 @@ internal sealed class CommandMetadataGenerator(string assembly)
 		               {
 		                   public static void GenerateMetadata(this global::Varcom.CommandRegistry registry)
 		                   {
-		                       global::System.ArgumentNullException.ThrowIfNull(registry);
 		               {{declarations}}
 		                   }
 		               }
